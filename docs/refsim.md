@@ -1,18 +1,27 @@
 # Эталон: AHDL оригинала в симуляции (Ф0.2)
 
-Оригинальный AHDL (`upstream/sprinter-hard`, ветка `quartus2`, каталоги `Quartus2/ACEX`, `Quartus2/MAX`) собирается Quartus 13 под Cyclone IV E в функциональный сетевой список Verilog (`.vo`). Его гоняет iverilog вместе с атомами Altera; наш перевод сравнивается с ним по модулям.
+Оригинальный AHDL собирается Quartus 13 под Cyclone IV E в функциональный сетевой список Verilog (`.vo`). Его гоняет iverilog вместе с атомами Altera; наш перевод сравнивается с ним по модулям.
 
 ## Сборка
 
 ```
-src/sim/ahdl/build_ref.sh [ACEX|MAX] [TOP]     # по умолчанию ACEX SP2_ACEX
+src/sim/ahdl/build_ref.sh [SRC] [TOP] [NAME]   # по умолчанию ACEX SP2_ACEX
 ```
+
+| SRC | Исходник | Верх |
+|---|---|---|
+| `ACEX`, `MAX` | `upstream/sprinter-hard/MaxPlus2/{ACEX,MAX}` (2.18 Peters Plus) | `SP2_ACEX`, `SP2_MAX` |
+| `303A` | `upstream/tt-sp2000-acex` (3.03a, основа перевода) | `BASE_303` |
+| `K30` | `upstream/tt-sprinter-bios` @ 085ef3c `src/altera/acex/k30` (BIOS 3.05+) | `SP2_ACEX` (NAME `K30`) |
+| `SCROLL` | `upstream/tt-scroll-cnf/src` (конфигурация игры) | `SCROLL` |
+| каталог | любой каталог с `.TDF` / `.INC` / `.MIF` | — |
 
 - Quartus — образ `karabas-quartus:13.0sp1` (docker, без сети), ~10 с на модуль. Результат: `src/sim/ahdl/build/<TOP>/simulation/modelsim/<TOP>.vo` (вне git).
 - Атомы для iverilog: `/opt/altera/quartus/eda/sim_lib/cycloneive_atoms.v` + `altera_primitives.v` (`dffeas`); в образе docker их нет. Другой путь — переменная `QUARTUS_SIM_LIB`.
 - Исходники писались под DOS: `INCLUDE "kbd"` ищет `kbd.inc`, поэтому скрипт кладёт рядом копии в нижнем регистре.
+- MIF в синтаксисе MAX+plus II (`адрес : v1 v2 v3 ...;`) Quartus 13 не принимает: `tools/mif.py mif` переписывает их по адресу на строку (`tools/mif.py hex` даёт файл для `$readmemh`). MIF каталога `sprinter-hard/Quartus2/` испорчены (`docs/ahdl.md` п. 6.1) — его не берём; MIF `MaxPlus2/`, 3.03a и k30 совпадают слово в слово.
 
-Все верхние уровни и подмодули собираются без ошибок (2026-11-20):
+Все верхние уровни и подмодули собираются без ошибок (2026-11-20; модули — 2.18):
 
 | TOP | LE | регистры | бит памяти |
 |---|---|---|---|
@@ -24,6 +33,9 @@ src/sim/ahdl/build_ref.sh [ACEX|MAX] [TOP]     # по умолчанию ACEX SP
 | KBD | 89 | 61 | 2 048 |
 | MOUSE | 50 | 44 | 0 |
 | SP2_MAX | 104 | 56 | 0 |
+| BASE_303 (3.03a) | 1 436 | | |
+| K30 | 1 426 | | |
+| SCROLL | 1 190 | | |
 
 (В ACEX у оригинала 1 569 LE: другая технология и упаковка; у Cyclone IV 4-входовые LUT те же, порядок величины совпадает.)
 

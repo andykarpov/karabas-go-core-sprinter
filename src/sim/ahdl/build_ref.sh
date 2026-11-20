@@ -1,14 +1,29 @@
 #!/bin/sh
-# Compile the original AHDL (upstream/sprinter-hard, Quartus2/) with Quartus 13 (docker image karabas-quartus:13.0sp1)
-# for Cyclone IV E and write a functional Verilog netlist per top: the reference for the equivalence sims.
-# usage: build_ref.sh [ACEX|MAX] [TOP]   (default ACEX SP2_ACEX); output build/<TOP>/<TOP>.vo
+# Compile an original AHDL design with Quartus 13 (docker image karabas-quartus:13.0sp1) for Cyclone IV E and write
+# a functional Verilog netlist: the reference for the equivalence sims.
+# usage: build_ref.sh [SRC] [TOP] [NAME]    output build/<NAME>/simulation/modelsim/<TOP>.vo
+#   SRC: a directory of .TDF / .INC / .MIF, or an alias:
+#     ACEX, MAX  upstream/sprinter-hard MaxPlus2/ACEX, MaxPlus2/MAX (2.18, default ACEX; the MIFs of Quartus2/ are damaged)
+#     303A       upstream/tt-sp2000-acex (3.03a, top BASE_303)
+#     K30        upstream/tt-sprinter-bios at 085ef3c src/altera/acex/k30 (BIOS 3.05+, top SP2_ACEX; extracted)
+#     SCROLL     upstream/tt-scroll-cnf/src (game config, top SCROLL)
+#   NAME: build directory (default TOP; give one when two sources share a top name)
 set -eu
 cd "$(dirname "$0")"
-DIR=${1:-ACEX}; TOP=${2:-SP2_ACEX}
-B=build/$TOP
+U=../../../upstream
+SRC=${1:-ACEX}; TOP=${2:-SP2_ACEX}
+case "$SRC" in
+	ACEX|MAX) SRC=$U/sprinter-hard/MaxPlus2/$SRC ;;
+	303A) SRC=$U/tt-sp2000-acex ;;
+	SCROLL) SRC=$U/tt-scroll-cnf/src ;;
+	K30) mkdir -p build/src_k30; git -C $U/tt-sprinter-bios archive 085ef3c src/altera/acex/k30 | tar -x -C build/src_k30
+	     SRC=build/src_k30/src/altera/acex/k30 ;;
+esac
+B=build/${3:-$TOP}
 mkdir -p "$B"
-cp ../../../upstream/sprinter-hard/Quartus2/$DIR/*.TDF ../../../upstream/sprinter-hard/Quartus2/$DIR/*.INC "$B"/ 2>/dev/null || true
-cp ../../../upstream/sprinter-hard/Quartus2/$DIR/*.MIF "$B"/ 2>/dev/null || true
+for f in "$SRC"/*.TDF "$SRC"/*.tdf "$SRC"/*.INC "$SRC"/*.inc "$SRC"/*.MIF "$SRC"/*.mif; do [ -e "$f" ] && cp "$f" "$B"/; done
+# MAX+plus II MIF list syntax ("addr : v1 v2 ...") is illegal for Quartus 13: rewrite one address per line
+for f in "$B"/*.MIF "$B"/*.mif; do [ -e "$f" ] && python3 -I ../../../tools/mif.py mif "$f" "$f"; done
 # the sources were written on DOS: INCLUDE "kbd" needs kbd.inc, LPM_FILE="DCP.MIF" the upper case
 for f in "$B"/*.TDF "$B"/*.INC "$B"/*.MIF; do [ -e "$f" ] || continue; l=$(basename "$f" | tr A-Z a-z); [ -e "$B/$l" ] || cp "$f" "$B/$l"; done
 cat > "$B/$TOP.qsf" <<Q
