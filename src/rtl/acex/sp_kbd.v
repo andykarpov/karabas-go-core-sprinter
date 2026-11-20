@@ -5,7 +5,8 @@
 // - DFF on CLK42                  -> register updated when CE.
 // - DFF clocked by another signal -> an event: the source's rising edge, seen at the CE where the source register
 //                                    changes (its next value is known before the edge), so the order of the original
-//                                    ripple is kept; an external clock (CLK_K) is seen one CE later.
+//                                    ripple is kept. The line clock CLK_K = DFF(CTH5) of the top comes in as the
+//                                    event CLK_K_EV (high at the CE where CLK_K rises).
 // - asynchronous clrn / prn       -> the effective value *_e (forced while active); at a CE where it is active the
 //                                    register takes the forced value (the preset / clear wins over the clock edge).
 //                                    AHDL: DFF(d, clk, clrn, prn), DFFE(d, clk, clrn, prn, ena) — mind the order.
@@ -15,7 +16,7 @@
 module sp_kbd (
 	input            CLK,
 	input            CE,
-	input            CLK_K,      // ~15 kHz from the line counter: timeout of a PS/2 frame
+	input            CLK_K_EV,   // CLK_K (~15.6 kHz, DFF(CTH5) of the top) rises at this CE: timeout of a PS/2 frame
 	input            KBD_CC,     // PS/2 clock
 	input            KBD_DD,     // PS/2 data
 	input            RF_N,       // /RFSH
@@ -35,10 +36,9 @@ module sp_kbd (
 
 	// ---- frame timeout counter KB_CT: decrements on CLK_K, preset to 7 while the (registered) PS/2 clock is low
 	reg        cc_q = 1'b0;               // DFF(KBD_CC, CLK42): KB_CT[].prn
-	reg        clk_k_q = 1'b0;
 	reg  [2:0] ct_q = 3'd0;
 	wire [2:0] ct_e = cc_q ? ct_q : 3'd7;
-	wire       k_rise = CLK_K & ~clk_k_q;
+	wire       k_rise = CLK_K_EV;
 	wire [2:0] ct_dec = (ct_e == 3'd0) ? 3'd0 : ct_e - 3'd1;
 	wire [2:0] ct_r = ~cc_q ? 3'd7 : (k_rise ? ct_dec : ct_q);     // register after this CE
 	wire [2:0] ct_n = ~KBD_CC ? 3'd7 : ct_r;                        // KB_CT (effective) after this CE
@@ -118,7 +118,6 @@ module sp_kbd (
 
 	always @(posedge CLK) if (CE) begin
 		cc_q    <= KBD_CC;
-		clk_k_q <= CLK_K;
 		ct_q    <= ct_r;
 
 		nc_q <= ~KBD_CC;

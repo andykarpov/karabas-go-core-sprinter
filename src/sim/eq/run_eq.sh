@@ -13,10 +13,11 @@ run() {
 		|| { grep -v coerced build/tb_eq_$t.log; exit 1; }
 	vvp -n build/tb_eq_$t.vvp | grep -v '\$finish'
 }
-T=${*:-kbd}
+T=${*:-kbd mouse}
 for t in $T; do
 	case $t in
 		kbd) run kbd "$(ref KBD303 KBD 303A)" ../../rtl/acex/sp_kbd.v ;;
+		mouse) run mouse "$(ref MOUSE303 MOUSE 303A)" ../../rtl/acex/sp_mouse.v ;;
 		*) echo "unknown test $t"; exit 1 ;;
 	esac
 done

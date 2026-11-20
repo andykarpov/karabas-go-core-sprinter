@@ -7,17 +7,17 @@ module tb_eq_kbd;
 	reg clk_k = 0, kbd_cc = 1, kbd_dd = 1, rf_n = 1, io_n = 1, ena = 1, int_ena = 1;
 	reg [7:0] a = 8'hFF;
 	reg cmp_on = 0;
-	// CLK_K is a raw clock in the AHDL: the chip reacts within the cycle, our module at the next CE. Giving it to
-	// the reference one cycle later aligns every path through it.
-	reg clk_k_ref = 0; always @(posedge clk) clk_k_ref <= clk_k;
+	// CLK_K is a register of the top (DFF(CTH5)); our module gets the event of its rising edge, known before the edge
+	integer k_cnt = 0;
+	wire clk_k_ev = (k_cnt == 83) & ~clk_k;
 	integer errors = 0, weak = 0;
 
 	wire [7:0] kbo_r, kbo_o;
 	wire rst_r, f12_r, ctrl_r, alt_r, sh_r, int_r, rst_o, f12_o, ctrl_o, alt_o, sh_o, int_o;
-	kbd ref(.CLK42(clk), .CLK_K(clk_k_ref), .KBD_CC(kbd_cc), .KBD_DD(kbd_dd), .\/RF (rf_n), .\/IO (io_n), .\/IOM (1'b1),
+	kbd ref(.CLK42(clk), .CLK_K(clk_k), .KBD_CC(kbd_cc), .KBD_DD(kbd_dd), .\/RF (rf_n), .\/IO (io_n), .\/IOM (1'b1),
 		.\/M1 (1'b1), .A(a), .KBO(kbo_r), .KB_RESET(rst_r), .KB_F12(f12_r), .KB_CTRL(ctrl_r), .KB_ALT(alt_r),
 		.KB_SH(sh_r), .ENA(ena), .INT_ENA(int_ena), .\INT (int_r));
-	sp_kbd #(.MIF_HEX("../../rtl/acex/mif/kbd_ini2.hex")) dut(.CLK(clk), .CE(1'b1), .CLK_K(clk_k), .KBD_CC(kbd_cc),
+	sp_kbd #(.MIF_HEX("../../rtl/acex/mif/kbd_ini2.hex")) dut(.CLK(clk), .CE(1'b1), .CLK_K_EV(clk_k_ev), .KBD_CC(kbd_cc),
 		.KBD_DD(kbd_dd), .RF_N(rf_n), .IO_N(io_n), .A(a), .ENA(ena), .INT_ENA(int_ena), .KBO(kbo_o),
 		.KB_RESET(rst_o), .KB_F12(f12_o), .KB_CTRL(ctrl_o), .KB_ALT(alt_o), .KB_SH(sh_o), .INT(int_o));
 
@@ -28,7 +28,7 @@ module tb_eq_kbd;
 	`EQ_CMP(intr, 1, int_o, int_r)
 
 	// line clock, 16 times faster than the real 15.625 kHz (only its ratio to the PS/2 timing matters)
-	always begin repeat (84) @(posedge clk); clk_k <= ~clk_k; end
+	always @(posedge clk) if (k_cnt == 83) begin k_cnt <= 0; clk_k <= ~clk_k; end else k_cnt <= k_cnt + 1;
 	// refresh: /RF low 4 of every 20 clocks (an M1 cycle at 21 MHz)
 	always begin repeat (16) @(posedge clk); rf_n <= 0; repeat (4) @(posedge clk); rf_n <= 1; end
 	// port reads: /IO low 12 clocks, random high address, every ~1.5 us
