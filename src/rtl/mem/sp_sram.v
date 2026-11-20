@@ -177,13 +177,17 @@ module sp_sram #(
 
 	// ================= pins
 	(* IOB = "TRUE" *) reg [20:0] sa = 21'd0;
-	(* IOB = "TRUE" *) reg [15:0] sd_o = 16'd0;
+	// the write data: an ODDR2 like the data drive (T) of the same pins (an OLOGIC takes OFF and TFF both SDR or both
+	// DDR): D0 = the value the register takes at this rising edge, D1 = the register, i.e. the pin as an IOB register
+	reg [15:0] sd_o = 16'd0;
+	wire [15:0] sd_n;
 	(* IOB = "TRUE" *) reg  [1:0] oe_n = 2'b00;
-	(* IOB = "TRUE" *) reg [15:0] md_in = 16'd0;
+	// the read data: an IDDR2 (Q0 = the pin at the rising edge, i.e. an IOB register): the same pins have DDR
+	// outputs (ODDR2 data and T), and an IOB does not take SDR and DDR together
+	wire [15:0] md_in;
 	reg        w1 = 1'b0, w2 = 1'b0;         // write slot: first / second CLK
 	reg  [1:0] wlan = 2'b00;
 	assign SRAM_A    = sa;
-	assign SRAM_D_O  = sd_o;
 	assign SRAM_OE_N = oe_n;
 	// /WE: low from s+1/2 to s+3/2; data drive (T = 0) from s+1/2 to s+2 (D0 at the rising edge, D1 at the falling)
 	genvar i;
@@ -192,11 +196,22 @@ module sp_sram #(
 			ODDR2 #(.DDR_ALIGNMENT("NONE"), .INIT(1'b1), .SRTYPE("SYNC")) u_we (.Q(SRAM_WE_N[i]), .C0(CLK), .C1(~CLK),
 				.CE(1'b1), .D0(~(w1 & wlan[i])), .D1(~(w1 & wlan[i])), .R(1'b0), .S(1'b0));
 		end
+		for (i = 0; i < 16; i = i + 1) begin : g_do
+			ODDR2 #(.DDR_ALIGNMENT("NONE"), .INIT(1'b0), .SRTYPE("SYNC")) u_d (.Q(SRAM_D_O[i]), .C0(CLK), .C1(~CLK),
+				.CE(1'b1), .D0(sd_n[i]), .D1(sd_o[i]), .R(1'b0), .S(1'b0));
+		end
+		for (i = 0; i < 16; i = i + 1) begin : g_di
+			IDDR2 #(.DDR_ALIGNMENT("NONE"), .INIT_Q0(1'b0), .INIT_Q1(1'b0), .SRTYPE("SYNC")) u_di (.Q0(md_in[i]), .Q1(),
+				.C0(CLK), .C1(~CLK), .CE(1'b1), .D(SRAM_D_I[i]), .R(1'b0), .S(1'b0));
+		end
 		for (i = 0; i < 16; i = i + 1) begin : g_t
 			ODDR2 #(.DDR_ALIGNMENT("NONE"), .INIT(1'b1), .SRTYPE("SYNC")) u_t (.Q(SRAM_D_T[i]), .C0(CLK), .C1(~CLK),
 				.CE(1'b1), .D0(~w1), .D1(~(w1 | w2)), .R(1'b0), .S(1'b0));
 		end
 	endgenerate
+
+	// the write data the register takes (at a slot edge; else it holds)
+	assign sd_n = ~slot ? sd_o : w_req ? (w_half ? {VD3_O, VD2_O} : {VD1_O, VD0_O}) : wb_pend ? {wb_d, wb_d} : LD_D;
 
 	// ================= read data: tags, registers, views
 	reg  [3:0] tag_cur = G_NONE, tag_land = G_NONE;
@@ -249,7 +264,6 @@ module sp_sram #(
 
 	// ================= registers
 	always @(posedge CLK) begin
-		md_in  <= SRAM_D_I;
 		ph     <= e;
 		if (e == 4'd10) wl <= ~V_WR_NX;
 		LD_ACK <= 1'b0;
@@ -279,9 +293,10 @@ module sp_sram #(
 			if (g_be != 2'b00) w1 <= 1'b1;
 			// data and lanes of the write this slot would make (not on the grant: a write slot is W at c11, else B,
 			// else L; the data is not driven in a read slot)
-			if (w_req) begin sd_o <= w_half ? {VD3_O, VD2_O} : {VD1_O, VD0_O}; wlan <= w_half ? wl[3:2] : wl[1:0]; end
-			else if (wb_pend) begin sd_o <= {wb_d, wb_d}; wlan <= {wb_a[0], ~wb_a[0]}; end
-			else begin sd_o <= LD_D; wlan <= LD_BE; end
+			sd_o <= sd_n;
+			if (w_req) wlan <= w_half ? wl[3:2] : wl[1:0];
+			else if (wb_pend) wlan <= {wb_a[0], ~wb_a[0]};
+			else wlan <= LD_BE;
 			case (g)
 				G_P: p_half <= VA_NX[1];
 				G_A: begin a_done <= 1'b1; a_half <= g_a[0]; a_atr <= (e != 4'd5); a_addr <= (e == 4'd5) ? VA_NX : VA_ATR; end

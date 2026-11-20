@@ -158,7 +158,12 @@ module sp_machine #(
 	wire  [2:0] x_ct; wire [17:1] x_va_nx, x_va_atr; wire [3:0] x_vwr_nx; wire [15:0] x_va_mod;
 	wire        x_mode_rq, x_mlo_rq, x_atr_zx, x_pix_rq, x_sel_rom, x_sel_cash; wire [1:0] x_mca;
 	wire [15:0] md_bus;
-	wire        max_res_n, xa3;
+	wire        max_res_c, xa3;
+	// the MAX /RESET (nCONFIG of the ACEX and the CPU /RESET here) through a register: in the original an
+	// asynchronous open-drain line; combinational it made a path MA latch -> MAX decode -> ACEX reset -> /WE ->
+	// SDRAM command longer than one CLK (PAR, Ф1.4). One CLK later does not matter for a reset of 0.5 s.
+	reg         max_res_n = 1'b0;
+	always @(posedge CLK) max_res_n <= max_res_c;
 	sp_acex #(.MIF_DCP(MIF_DCP), .MIF_AY(MIF_AY), .MIF_KBD(MIF_KBD)) ACEX(.CLK(CLK), .CE(ce), .CE_N(ce_n),
 		.M1_N(m1_n), .RF_N(rf_n), .IO_N(io_n), .WR_N(wr_n), .RD_N(rd_n), .MR_N(mr_n),
 		.M1_N_NX(m1_nx), .RF_N_NX(rf_nx), .IO_N_NX(io_nx), .WR_N_NX(wr_nx), .RD_N_NX(rd_nx), .MR_N_NX(mr_nx),
@@ -199,7 +204,7 @@ module sp_machine #(
 	sp_max #(.XHD_RES_ON_HSYNC(XHD_RES_ON_HSYNC)) MAX(.CLK(CLK), .CE(ce), .CE_N(ce_n), .EPM_RES(EPM_RES_N),
 		.PW_GOOD(PW_GOOD), .HDD_C(HDD_C), .FDD_C(FDD_C), .XACS(on ? (x_xacs & ~xacs_pulse) : 1'b1),
 		.WR_CNF(~(wr_n | mr_n)), .D0(d_bus[0]), .CLK14(), .CLKZZ_O(max_clkzz), .CLKZZ_OE(max_clkzz_oe), .AUD(max_aud),
-		.SINC_H(SINC_H), .SINC_V(SINC_V), .SINC(), .SINC_1(max_sinc1), .SINC_2(max_sinc2), .CONF_X_N(max_res_n),
+		.SINC_H(SINC_H), .SINC_V(SINC_V), .SINC(), .SINC_1(max_sinc1), .SINC_2(max_sinc2), .CONF_X_N(max_res_c),
 		.K_CLK(max_kclk), .K_D0(max_kd0), .WR_PDOS(WR_PDOS), .WG_WR_N(WG_WR_N), .WG_RD_N(WG_RD_N),
 		.CMOS_DWR(CMOS_DWR), .CMOS_AS(CMOS_AS), .CMOS_DRD(CMOS_DRD), .HD_DIR(), .HD_CS(), .XHD_RES(XHD_RES),
 		.XHD_WR(XHD_WR), .XHD_RD(XHD_RD), .XHD1_CS(XHD1_CS), .XHD2_CS(XHD2_CS), .T320_O(T320));

@@ -75,3 +75,4 @@ src/sim/machine/build/
 src/sim/cpu/build/
 __pycache__/
 src/syn/build/
+src/sim/board/build/
