@@ -1,6 +1,6 @@
 #!/bin/sh
 # Equivalence tests of the translated ACEX / MAX modules against the reference netlists of the original AHDL.
-# usage: run_eq.sh [kbd ...] [+frame]   (default: all; +frame = whole frames where a test supports it, minutes); builds the reference netlists when missing (docs/refsim.md)
+# usage: run_eq.sh [kbd ...] [+frame]   (acexm: not in the default set)   (default: all; +frame = whole frames where a test supports it, minutes); builds the reference netlists when missing (docs/refsim.md)
 set -eu
 cd "$(dirname "$0")"
 S=${QUARTUS_SIM_LIB:-/opt/altera/quartus/eda/sim_lib}
@@ -41,6 +41,12 @@ for t in $T; do
 				$A/sp_kbd.v $A/sp_mouse.v
 			for s in 0 1 2; do vvp -n build/tb_eq_acex.vvp +scen=$s > build/tb_eq_acex_$s.txt 2>&1 & done; wait
 			for s in 0 1 2; do echo "scenario $s:"; grep -v '\$finish' build/tb_eq_acex_$s.txt; done ;;
+		acexm) # the same, our module on its memory: sp_sram + SRAM models, sp_sdram + SDRAM model (mem/), pad delays
+			A=../../rtl/acex; M=../../rtl/mem
+			build acexm -I. "$(ref BASE_303 BASE_303 303A)" $A/sp_acex.v $A/sp_dcp.v $A/sp_video2.v $A/sp_acceler.v \
+				$A/sp_ay.v $A/sp_kbd.v $A/sp_mouse.v $M/sp_sram.v $M/sp_sdram.v mem/sram_is61.v mem/sdram_mt48.v mem/oddr2.v
+			for s in 0 1 2; do vvp -n build/tb_eq_acexm.vvp +scen=$s > build/tb_eq_acexm_$s.txt 2>&1 & done; wait
+			for s in 0 1 2; do echo "scenario $s:"; grep -v '\$finish' build/tb_eq_acexm_$s.txt; done ;;
 		*) echo "unknown test $t"; exit 1 ;;
 	esac
 done

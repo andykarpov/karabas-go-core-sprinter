@@ -79,7 +79,17 @@ module sp_video2 (
 	// INTT after this CE. Valid at CE.
 	output      [5:0] CT_NX,
 	output      [5:0] CTH_NX,
-	output            INTT_NX
+	output            INTT_NX,
+	// karabas: early signals for the SRAM controller (docs/memtiming.md 5; slot [s, s+2] = address out at edge s,
+	// data in at s+2; edges c0..c11 of the 7 MHz cycle, c0 = the CE after which CT[2:0] = 6)
+	output     [17:1] VA_NX,       // the next VA (byte address, bit 1 = 16-bit half): stable at the CE_N before the CE that loads it
+	output      [3:0] V_WR_NX,     // V_WR of the next write slot (c0..c1) when it comes: stable c10..c11 (low = byte written)
+	output     [15:0] VA_MOD,      // word address of the mode table of this cycle (stable from c1 in cycles CT[5:3] = 3 / 7, from c3 in 0)
+	output            MODE_RQ,     // MODE0..2 load at the c12 of this cycle (from c1)
+	output            MLO_RQ,      // byte 0 of the mode word may go to D_PIC0 at c14 (cycle CT[5:3] = 0 with MODE0[5]; from c1)
+	output     [17:1] VA_ATR,      // the ZX attribute address of this cycle (valid when ATR_ZX, from c1)
+	output            ATR_ZX,      // MODE0[4]: ZX screen (the attribute address does not depend on CT)
+	output            PIX_RQ       // D_PIC0 takes the pixel byte at c8 of this cycle and it can be seen (from c1)
 );
 	// ================= sync counters CT / CTH / CTV / CTF
 	reg  [5:0] ct_q = 6'd0;
@@ -266,4 +276,13 @@ module sp_video2 (
 	assign CT_NX   = ct_n;
 	assign CTH_NX  = cth_n;
 	assign INTT_NX = ct5_rise ? ~(inttx & (ctv_n[2:0] == 3'd7)) : intt;
+	// early signals (outputs only: nothing above uses them)
+	assign VA_NX   = vla_n[17:1];
+	assign V_WR_NX = {4{mxwe_b}} | v_en_d;      // = {4{v_we_d}} | v_en_d in the write slot (vcm = 2, c11)
+	assign VA_MOD  = {DIR_PORT[3], cth_e, ct_e[5], 2'b11, ctv_e[8:3]};
+	assign MODE_RQ = (ct_n[5:3] == 3'd7) | ((ct_n[5:3] == 3'd3) & ~mode0[5]);
+	assign MLO_RQ  = mode0[5] & (ct_n[5:3] == 3'd0);
+	assign VA_ATR  = {mode2[7:3], mode2[2:0], mode0[3:0], DIR_PORT[0], 3'b110, ~mode0[7]};   // [0] = ~mode0[6] dropped
+	assign ATR_ZX  = mode0[4];
+	assign PIX_RQ  = (mode0[5] ? (ct_n[5:3] == 3'd0) : (ct_n[4:3] == 2'd0)) & (mode0[4] | x_mode[4]);
 endmodule

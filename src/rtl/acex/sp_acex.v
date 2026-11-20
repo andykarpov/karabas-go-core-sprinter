@@ -70,6 +70,7 @@ module sp_acex (
 	output      [7:0] D_O,
 	output            D_OE,
 	output            CLKZ1,        // Z80 clock (DCP CLK_Z80, changes at CE_N)
+	output            CLKZ1_NX,     // its value after this CE_N (the CPU enables: rise / fall of CLKZ1)
 	output            WAIT_N_OE,    // pull /WAIT low
 	input             RESET_N_I,    // the /RESET line without our drive
 	output            RESET_N_OE,   // pull /RESET low
@@ -113,7 +114,20 @@ module sp_acex (
 	output            RDXA,
 	output            WR_AWG,
 	output            RD_KMPS,
-	output            WR_DWG
+	output            WR_DWG,
+	// karabas: early signals for the memory controllers (docs/memtiming.md 5; outputs only)
+	output      [2:0] CT_PH,        // CT[2..0] (0 1 2 4 5 6): the phase of the 7 MHz memory cycle
+	output     [17:1] VA_NX,        // VIDEO2: the next VA (byte address), stable at the CE_N before the CE that loads it
+	output      [3:0] V_WR_NX,      // VIDEO2: V_WR of the next write slot (c0..c1), stable c10..c11
+	output     [15:0] VA_MOD,       // VIDEO2: mode table word of this cycle
+	output            MODE_RQ,      // VIDEO2: MODE0..2 load at c12 of this cycle
+	output            MLO_RQ,       // VIDEO2: byte 0 of the mode word may be taken at c14
+	output     [17:1] VA_ATR,       // VIDEO2: ZX attribute address (when ATR_ZX)
+	output            ATR_ZX,       // VIDEO2: MODE0[4]
+	output            PIX_RQ,       // VIDEO2: the pixel byte is taken at c8
+	output      [1:0] MCA,          // DCP: A[1..0] of the DRAM access, from c2 to c12 (MCA1 = DRAM bank)
+	output            SEL_ROM,      // the current A / RA select the ROM (PRE_ROM / PRE_CASH, before /MR falls)
+	output            SEL_CASH      // ... the cache (fastram)
 );
 	parameter MIF_DCP = "dcp.hex";
 	parameter MIF_AY  = "ay.hex";
@@ -537,6 +551,7 @@ module sp_acex (
 	assign RESET_N_OE = ~rst_q;
 	assign WAIT_N_OE  = ~(dc_wait_n & wait_rom & wait_orig);
 	assign CLKZ1      = clk_z80;
+	assign CLKZ1_NX   = clk_z80_nx;
 	assign CS_ROM     = cs_romt;
 	assign CS_CASH    = cs_casht & cs_isa & isa_a20;
 	assign RA         = isa_a;
@@ -556,6 +571,10 @@ module sp_acex (
 	assign VD0_O = vdo0; assign VD1_O = vdo1; assign VD2_O = vdo2; assign VD3_O = vdo3;
 	assign VD_OE      = ~v_wen;
 	assign WR_COL     = wr_pix;
+	assign CT_PH      = ct[2:0];
+	assign MCA        = mca;
+	assign SEL_ROM    = ~pre_rom & pre_cash;
+	assign SEL_CASH   = pre_rom & ~pre_cash;
 
 	// ================= submodules
 	sp_video2 SVIDEO(.CLK(CLK), .CE(CE), .CE_N(CE_N), .CT(ct), .CTH(cth), .CTV(ctv), .CTF(ctf), .BLANK(v_blank),
@@ -564,7 +583,9 @@ module sp_acex (
 		.VDM0(vd0), .VDM1(vd1), .VDM2(vd2), .VDM3(vd3), .V_WR(v_wr), .V_WEN(v_wen), .V_CS(v_cs), .WR_PIX(wr_pix),
 		.ZX_PORT({sp_sa, sp_scr & ~(A[13] & ~acc_gline[7]) & ~acc_gline[6] & ~all_mode_e[0], acc_gline[5:0]}),
 		.DIR_PORT({border[2:0], rgmod_e[2], rgmod_e[0], 2'b00, scr128}), .INTT(intt),
-		.CT_NX(ct_nxr), .CTH_NX(cth_nxr), .INTT_NX(intt_nx));
+		.CT_NX(ct_nxr), .CTH_NX(cth_nxr), .INTT_NX(intt_nx),
+		.VA_NX(VA_NX), .V_WR_NX(V_WR_NX), .VA_MOD(VA_MOD), .MODE_RQ(MODE_RQ), .MLO_RQ(MLO_RQ), .VA_ATR(VA_ATR),
+		.ATR_ZX(ATR_ZX), .PIX_RQ(PIX_RQ));
 
 	sp_dcp #(.MIF_HEX(MIF_DCP), .REFRESH_REG(1)) DECODE(.CLK(CLK), .CE(CE), .CE_N(CE_N), .RESET_N(reset_n), .RES_N(), .CT(ct[2:0]),
 		.CONTINUE(acc_cont), .RAS(dc_ras), .CAS(dc_cas), .MC_END(mc_end), .MC_BEGIN(mc_begin), .MC_TYPE(mc_type),

@@ -142,10 +142,10 @@ module tb_eq_acex;
 	assign #3 md[15:8] = (dr_rd & ~cas_r[1]) ? dq1 : (dr_rd & ~cas_r[3]) ? dq3 : 8'bz;
 	integer n_dwr = 0, n_drd = 0, n_rf = 0;
 	always @(negedge clk) if (ras_cyc && ras_r[0] === 1'b0 && we_r === 1'b0) begin
-		if (cas_r[0] === 1'b0) dram[didx(1'b0, 1'b0, row, col)] <= md[7:0];
-		if (cas_r[1] === 1'b0) dram[didx(1'b0, 1'b1, row, col)] <= md[15:8];
-		if (cas_r[2] === 1'b0) dram[didx(1'b1, 1'b0, row, col)] <= md[7:0];
-		if (cas_r[3] === 1'b0) dram[didx(1'b1, 1'b1, row, col)] <= md[15:8];
+		if (cas_r[0] === 1'b0 && cas_p[0] === 1'b0) dram[didx(1'b0, 1'b0, row, col)] <= md[7:0];
+		if (cas_r[1] === 1'b0 && cas_p[1] === 1'b0) dram[didx(1'b0, 1'b1, row, col)] <= md[15:8];
+		if (cas_r[2] === 1'b0 && cas_p[2] === 1'b0) dram[didx(1'b1, 1'b0, row, col)] <= md[7:0];
+		if (cas_r[3] === 1'b0 && cas_p[3] === 1'b0) dram[didx(1'b1, 1'b1, row, col)] <= md[15:8];
 	end
 	reg we_p = 1;
 	always @(negedge clk) begin
