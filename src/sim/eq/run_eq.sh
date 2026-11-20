@@ -10,10 +10,10 @@ ref() { [ -s "$R/build/$1/simulation/modelsim/$2.vo" ] || "$R/build_ref.sh" "$3"
 run() {
 	t=$1; shift
 	iverilog -g2005 -o build/tb_eq_$t.vvp -s tb_eq_$t tb_eq_$t.v "$@" "$S/cycloneive_atoms.v" "$S/altera_primitives.v" 2>build/tb_eq_$t.log \
-		|| { grep -v coerced build/tb_eq_$t.log; exit 1; }
+		|| { grep -v 'coerced\|sorry: procedural continuous' build/tb_eq_$t.log; exit 1; }
 	vvp -n build/tb_eq_$t.vvp | grep -v '\$finish'
 }
-T=${*:-kbd mouse ay max}
+T=${*:-kbd mouse ay max video2}
 for t in $T; do
 	case $t in
 		kbd) run kbd "$(ref KBD303 KBD 303A)" ../../rtl/acex/sp_kbd.v ;;
@@ -31,6 +31,7 @@ for t in $T; do
 			# the RS latches of EXP cells loop forever in zero delay: 1 ps on their outputs (vo_loop_delay.py)
 			python3 -I vo_loop_delay.py "$(ref MAX_T SP2_MAX "$PWD/build/max_t")" build/max_t.vo 'THDD|NO_HDD|T320|TURBING|RDAT_X' 2>/dev/null
 			run max build/max_t.vo ../../rtl/acex/sp_max.v ;;
+		video2) run video2 "$(ref VID303 VIDEO2 303A)" ../../rtl/acex/sp_video2.v ;;
 		*) echo "unknown test $t"; exit 1 ;;
 	esac
 done
