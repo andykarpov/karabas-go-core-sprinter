@@ -5,7 +5,12 @@
 ;   scenario 0: internal ports through the bus, pages of window 3 / 1;
 ;   scenario 2: accelerator fill and copy, 3.5 MHz and back;
 ;   scenario 1: IM 1 and IM 2 (vector FF) on keyboard interrupts of the ACEX (the testbench sends a PS/2 byte
-;   after the markers A0 / A1).
+;   after the markers A0 / A1);
+;   scenario 3: video RAM (ZX screen + attributes, graphics page 50 with the palette bytes 3E0-3FF of a line, the
+;   video-only page 54), read back from the DRAM copy; the fastram (cache, IN (FB) / IN (7B)): a stage in DRAM
+;   (window 2) fills and sums cache bytes, copies code into the cache and calls it: M1 from the cache, writes 3 T
+;   apart (LD (nn),SP, PUSH with SP even / odd, CALL), read-modify-write (INC (HL), EX (SP),HL), a write followed
+;   at once by the fetch of that byte / of the other byte of its word (self-modifying code), a loop.
 ; With ALL_MODE0 = 1 the accelerator decodes LD r,r: the code has none outside the accelerator part.
 P_LOG	equ	#2001
 P_END	equ	#2002
@@ -15,6 +20,10 @@ P_CNF	equ	#00c6
 P_HOLD	equ	#20cb
 P_W1	equ	#4089
 P_W3	equ	#80f5
+P_AGR	equ	#00c4
+P_CASH1	equ	#00fb
+P_CASH0	equ	#007b
+PAY	equ	#1000			; scenario 3: the cache code (ROM 1000-1FFF copied into the cache by the testbench)
 
 	macro	OUTP port, val		; OUT (C),A of val to port (BC lost)
 	ld	bc,port
@@ -59,6 +68,8 @@ start:	ld	bc,P_FE
 	jp	z,scen1
 	cp	2
 	jp	z,scen2
+	cp	3
+	jp	z,scen3
 
 	; ---- scenario 0
 	; internal ports: the internal data win over the ACEX
@@ -215,3 +226,164 @@ c1:	add	a,(hl)
 	jr	nz,c1
 	LOG
 	ret
+
+	; ---- scenario 3: video RAM and the fastram
+scen3:	OUTP	P_ALLM, #00		; accelerator off, ZX screen copy (ALL_MODE0 = 0)
+	jp	cash_on			; everything below runs from the cache (no ROM waits)
+
+	; the fastram: IN (FB) puts the cache into window 0, the next fetch comes from the cache at PAY (the testbench
+	; preloads the cache with ROM 1000-1FFF, i.e. the code below, as a loader would have); at its end IN (7B) gives
+	; the ROM back and the next fetch is the ROM again (cash_off). Only the cache holds what the code writes:
+	; the self-modifying parts work only from the cache.
+	ds	PAY-5-$,0
+cash_on:
+	ld	bc,P_CASH1
+	in	a,(c)
+	assert	$ == PAY
+
+	; the cache code: video RAM writes (ZX screen, attributes, graphics page 50 + palette bytes, page 54), sums of
+	; the DRAM copies
+	OUTP	P_AGR, #00		; AGR[7..6] = 0: writes to 4000-5FFF go to the video RAM too
+	OUTP	P_W1, #05
+	ld	hl,#4000
+	ld	e,#3c
+	ld	b,4
+	call	fillc			; 4000..4003 = L xor 3C
+	ld	hl,#5800
+	ld	e,#47
+	ld	b,2
+	call	fillc			; 5800..5801 = L xor 47
+	ld	hl,#4000
+	ld	b,4
+	call	sumc
+	LOG
+	ld	hl,#5800
+	ld	b,2
+	call	sumc
+	LOG
+	OUTP	P_AGR, #10		; graphics line 10
+	OUTP	P_W1, #50		; page 50: DRAM + video RAM
+	ld	hl,#4000
+	ld	e,#c3
+	ld	b,4
+	call	fillc			; 4000..4003 = L xor C3
+	ld	hl,#43f8
+	ld	e,#81
+	ld	b,8
+	call	fillc			; 43F8..43FF = L xor 81: palette bytes of line 10
+	ld	hl,#4000
+	ld	b,4
+	call	sumc
+	LOG
+	ld	hl,#43f8
+	ld	b,8
+	call	sumc
+	LOG
+	OUTP	P_W1, #54		; page 54: video RAM only (checked by the testbench)
+	ld	hl,#4100
+	ld	e,#99
+	ld	b,4
+	call	fillc
+	OUTP	P_W1, #05
+	jr	cache2
+fillc:	ld	a,l			; (HL..) = L xor E, B bytes
+	xor	e
+	ld	(hl),a
+	inc	hl
+	djnz	fillc
+	ret
+sumc:	xor	a			; A = the sum of B bytes from HL
+sc1:	add	a,(hl)
+	inc	hl
+	djnz	sc1
+	ret
+	; the fastram itself
+cache2:	ld	(#1f00),sp		; two writes 3 T apart, one word
+	ld	hl,#2000		; 2000..200F = L xor 5A: writes from code in the cache
+	ld	b,16
+cf1:	ld	a,l
+	xor	#5a
+	ld	(hl),a
+	inc	hl
+	djnz	cf1
+	ld	hl,#2000
+	ld	b,16
+	xor	a
+cs1:	add	a,(hl)
+	inc	hl
+	djnz	cs1
+	LOG
+	ld	hl,tpl			; a routine copied inside the cache (LDIR: read, write, read ...)
+	ld	de,#1800
+	ld	bc,tpl_len
+	ldir
+	ld	sp,#3000
+	ld	hl,#1234
+	push	hl			; 2FFF / 2FFE: one word
+	ld	sp,#2fff
+	ld	de,#5678
+	push	de			; 2FFE / 2FFD: two words
+	ld	de,0
+	pop	bc			; 5678
+	ld	sp,#2ffe
+	pop	hl			; 1256: 12 from 2FFF (first push), 56 from 2FFE (second)
+	ld	d,b
+	ld	e,c
+	ld	bc,P_LOG
+	ld	a,d
+	out	(c),a			; 56
+	ld	a,e
+	out	(c),a			; 78
+	ld	a,h
+	out	(c),a			; 12
+	ld	a,l
+	out	(c),a			; 56
+	ld	sp,#2f00
+	call	#1800			; the copied routine: CALL = two writes 3 T apart, EX (SP),HL twice
+	out	(c),a			; A from the routine: C5
+	ld	hl,#2008		; read-modify-write
+	inc	(hl)
+	inc	(hl)
+	ld	a,(hl)
+	out	(c),a			; 08 xor 5A + 2 = 54
+	align	2
+	nop
+	ld	a,#a7
+	ld	(smc1+1),a		; the write, then the fetch of the other byte of its word, then the byte
+smc1:	ld	a,#00
+	assert	(smc1 & 1) == 0
+	out	(c),a			; A7
+	ld	a,#3c			; INC A
+	ld	(smc2),a		; the written byte fetched at once as the opcode
+smc2:	nop
+	out	(c),a			; 3D
+	align	2
+	ld	a,#5b
+	ld	(smc3+1),a		; the operand in the next word
+smc3:	ld	a,#00
+	assert	(smc3 & 1) == 1
+	out	(c),a			; 5B
+	ld	hl,#2000		; a loop from the cache: 34 T (c_f rotates)
+	ld	b,16
+	xor	a
+	ld	c,a
+lp:	add	a,(hl)
+	xor	b
+	inc	c
+	inc	hl
+	djnz	lp
+	LOG
+	ld	sp,(#1f00)		; the stack again: the two bytes written first
+	ld	bc,P_CASH0
+	in	a,(c)			; the ROM back in window 0
+cash_off:				; the ROM after the cache code
+	ld	a,(smc2)		; the ROM byte (00 = NOP), not the 3C written into the cache
+	LOG
+	ld	a,#e3
+	jp	theend
+tpl:	ex	(sp),hl			; (copied to 1800 in the cache) read-modify-write of the return address, twice
+	ex	(sp),hl
+	ld	a,#c5
+	ret
+tpl_len	equ	$-tpl
+	assert	$ <= #2000

@@ -215,13 +215,18 @@
 	// CPU read data: from the T80 latch (end of T2: edge c_f+5 for the cache, c_f+13 for the ROM, c_f = the CE
 	// after which CS is low) to the rise of CS our D_I must be the reference's D; ISA cycles excluded. cpu_k = k
 	// after the edge c_f+k: the negedge sample with cpu_k = 4 is the value the edge c_f+5 takes.
-	integer cpu_k = 0; reg cpu_on = 0, cpu_rom = 0;
+	// (TB_MEM_CPU_WAIT: a testbench with the real CPU on the /WAIT of sp_sram, CPU_WAIT_N; a cycle where the T80
+	// sampled it low, at a CE_N where CLKZ1 falls, is left to that testbench's own check at the T80 latch, cpu_wt)
+	integer cpu_k = 0; reg cpu_on = 0, cpu_rom = 0, cpu_wt = 0;
 	always @(posedge clk) begin
-		if (!cpu_on && (cs_rom_o === 1'b0 || fast_o)) begin cpu_on = 1; cpu_rom = cs_rom_o === 1'b0; cpu_k = 0; end
+		if (!cpu_on && (cs_rom_o === 1'b0 || fast_o)) begin cpu_on = 1; cpu_rom = cs_rom_o === 1'b0; cpu_k = 0; cpu_wt = 0; end
 		else if (cpu_on && !(cs_rom_o === 1'b0 || fast_o)) cpu_on = 0;
 		cpu_k = cpu_k + 1;
+`ifdef TB_MEM_CPU_WAIT
+		if (cpu_on && ce_n && clkz_o && !clkz_nx_o && u_sram.CPU_WAIT_N === 1'b0) cpu_wt = 1;   // T80 samples it
+`endif
 	end
-	always @(negedge clk) if (cmp_on && cpu_on && rd_n === 1'b0 && cpu_k >= (cpu_rom ? 12 : 4)) begin
+	always @(negedge clk) if (cmp_on && cpu_on && !cpu_wt && rd_n === 1'b0 && cpu_k >= (cpu_rom ? 12 : 4)) begin
 		n_cpu = n_cpu + 1;
 		if (d_u !== d) begin
 			x_cpu = x_cpu + 1;

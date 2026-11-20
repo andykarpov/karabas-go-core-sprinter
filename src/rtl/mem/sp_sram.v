@@ -70,6 +70,7 @@ module sp_sram #(
 	input             CPU_FLUSH,    // forget the fetched CPU byte (ROM changed under it)
 	output      [7:0] CPU_Q,        // ROM / fastram byte of the current A (valid when CPU_RDY)
 	output            CPU_RDY,
+	output            CPU_WAIT_N,   // /WAIT for the CPU (the top ANDs it with the ACEX /WAIT): the byte would be late
 	// loader: a write is taken (in a free slot) at the CLK where LD_ACK is high; hold LD_A / LD_BE / LD_D till then
 	input             LD_REQ,
 	input      [20:0] LD_A,         // word address
@@ -214,6 +215,12 @@ module sp_sram #(
 	wire [15:0] c_v    = c_land ? c_lw : c_word;
 	assign CPU_Q   = c_key[0] ? c_v[15:8] : c_v[7:0];
 	assign CPU_RDY = c_have & (c_valid | c_land);
+	// /WAIT: a ROM / fastram cycle (not refresh, no /WR yet) whose byte is neither here nor in flight in a slot that
+	// lands in time. T80pa samples /WAIT at the fall of T2 / TW (the CE_N c_f+3, ...) and takes the opcode at c_f+5,
+	// the read data at c_f+7: a C slot granted at c_f+1 or earlier lands by c_f+3, one granted at the sampling edge
+	// itself lands at c_f+5, too late for an opcode. The only case (docs/memtiming.md 4, 7): the first graphics
+	// cycle after ZX with PIX_RQ, a cache M1 with c_f = 4 (P at c3, A at its deadline c5, C at c7) -> one TW.
+	assign CPU_WAIT_N = ~(~MR_N & RF_N & WR_N & (SEL_ROM | SEL_CASH) & ~CPU_RDY & ~((tag_cur == G_C) & (c_tkey == c_key)));
 
 	localparam [15:0] XX = SIM_X ? 16'hxxxx : 16'h0000;
 	reg [31:0] vd;

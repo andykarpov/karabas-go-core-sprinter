@@ -1,14 +1,15 @@
 // The real CPU on the ACEX: sp_z84c15 (T80pa + Z84C15 peripherals) drives both sp_acex and the BASE_303 netlist (3.03a)
 // from one bus, running cpu_acex.asm from the ROM model (all 16 ROM pages hold it; the scenario number at 3FFF).
 // The models of DRAM / video RAM / ROM / cache / peripherals on MD / XA multiplexer / SINC_1 / PS/2 are those of
-// tb_eq_acex, on the reference pins. The CPU loop is closed on ours: CLKZ1 and its next value (DCP CLK_Z80_NX, by a
-// hierarchical name until sp_acex exports it), /WAIT = our WAIT_N_OE, /INT / /NMI = MA[13] / MA[12] latched at the
+// tb_eq_acex, on the reference pins. The CPU loop is closed on ours: CLKZ1 and its next value (CLKZ1_NX = DCP
+// CLK_Z80_NX), /WAIT = our WAIT_N_OE, /INT / /NMI = MA[13] / MA[12] latched at the
 // rise of our WR_AWG (the external latch of the board, docs/ahdl.md: INT_X, NMI_X are active high on MA), /RESET =
 // the line of the MAX model; the CPU data in = the bus wire d (keeper as in tb_eq_acex).
 // Checks: every output of ours against the reference at latency 0 (EQ_CMP, as tb_eq_acex), the program results on
 // the log port 2001 against the list below, the bus shape of the CPU (src/sim/cpu/z80_bus_chk.vh), X on buses.
 // +scen=0: internal ports through the bus, pages; +scen=1: IM 1 / IM 2 on keyboard interrupts (PS/2 frames,
-// ALL_MODE0 = 1, SINC_1 pulses as scenario 2 of tb_eq_acex); +scen=2: accelerator fill / copy, 3.5 MHz and back.
+// ALL_MODE0 = 1, SINC_1 pulses as scenario 2 of tb_eq_acex); +scen=2: accelerator fill / copy, 3.5 MHz and back;
+// +scen=3: video RAM writes (ZX, graphics, palette bytes, page 54) and the fastram (writes, code run from the cache).
 `timescale 1ns/1ps
 `include "eq_cmp.vh"
 module tb_cpu_acex;
@@ -77,7 +78,7 @@ module tb_cpu_acex;
 		.VD2_O(vd2_o), .VD3_O(vd3_o), .VD_OE(vd_oe_o), .WR_COL(wr_col_o), .DAC_DATA(dac_data_o), .DAC_WS(dac_ws_o),
 		.DAC_BCK(dac_bck_o), .MD_I(md), .MD_O(md_o), .MD_OE(md_oe_o), .MA(ma_o), .RAS_(ras_o), .CAS_(cas_o),
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
-		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o));
+		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o), .CFG_RST(1'b0));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	wire [7:0] d_pin_o = d_oe_o ? d_o : d;
@@ -350,10 +351,13 @@ module tb_cpu_acex;
 	// the pins to both ACEXes 1 ns after the CE (as the bus model: no race with the TG42 edge of the netlist)
 	assign #1 {m1_n, rf_n, io_n, wr_n, rd_n, mr_n, halt_n, a, cpu_do, cpu_doe} = {c_m1, c_rf, c_io, c_wr, c_rd, c_mr, c_halt, c_a, c_do, c_doe};
 	assign #1 {m1_nx, rf_nx, io_nx, wr_nx, rd_nx, mr_nx, a_nx} = {c_m1x, c_rfx, c_iox, c_wrx, c_rdx, c_mrx, c_ax};
-	// the latch of MA[14..12] on the board: taken at the rise of WR_AWG (MA as it was before that edge)
+	// the latch of MA[14..12] on the board (schematic 2016s: DD16 = 74ALS174 (КР1533ТМ9), clock = WR_AWG rising, /CLR =
+	// /RESET; Q0 = MA12 -> DD17.1, Q1 = MA13 -> DD17.2: open-collector NANDs as inverters (К155ЛА8) -> NMI/, INT/):
+	// taken at the rise of WR_AWG (MA as it was before that edge), cleared while /RESET is low
 	reg awg_p = 1'b1; reg [14:12] ma_p = 3'b111;
 	always @(negedge clk) begin
-		if (~awg_p & wr_awg_o) begin int_l <= ma_p[13]; nmi_l <= ma_p[12]; end
+		if (res_w === 1'b0) begin int_l <= 1'b0; nmi_l <= 1'b0; end
+		else if (~awg_p & wr_awg_o) begin int_l <= ma_p[13]; nmi_l <= ma_p[12]; end
 		awg_p <= wr_awg_o; ma_p <= ma_o[14:12];
 	end
 	reg chk_on = 0;
@@ -413,11 +417,18 @@ module tb_cpu_acex;
 		$readmemh("build/cpu_acex.hex", prog);
 		prog[16383] = scen;
 		for (i = 0; i < 262144; i = i + 1) rom[i] = prog[i & 16383];
+		// the cache code of scenario 3 (ROM 1000-1FFF) in the cache, all four ROM_RG[1..0] pages (RA = 01xx)
+		for (i = 0; i < 65536; i = i + 1) if (i[13:12] == 2'b01) cache[{2'b01, i[15:14], i[13:0]}] = prog[i[13:0]];
 		if (scen == 0) begin
 			e(8'hFF); e(8'h44); e(8'h5A); e(8'h5D); e(8'h55); e(8'h78); e(8'hA5); e(8'hA2); e(8'hAA); e(8'h78);
 			e(8'hC3); e(8'hE0);
 		end else if (scen == 2) begin
 			e(8'h00); e(8'hAA); e(8'hAA); e(8'h00); e(8'hAA); e(8'hAA); e(8'h5D); e(8'hFF); e(8'hE2);
+		end else if (scen == 3) begin
+			// video sums ZX / attributes / graphics / palette; in the cache: sum, PUSH / POP D E H L, the copied
+			// routine, INC (HL), the three self-modifying cases, the loop; the ROM byte under smc2; the end
+			e(8'hF6); e(8'h8D); e(8'h06); e(8'hDC); e(8'h78); e(8'h56); e(8'h78); e(8'h12); e(8'h56); e(8'hC5);
+			e(8'h54); e(8'hA7); e(8'h3D); e(8'h5B); e(8'h6A); e(8'h00); e(8'hE3);
 		end else begin
 			e(8'hA0); e(8'h38); e(8'h01); e(8'hA1); e(8'h22); e(8'h02); e(8'hE1);
 			sinc_lo = 2 * 96;
