@@ -81,9 +81,24 @@ module sp_dcp (
 	input             ACC_ON,
 	output      [7:0] DCPP,
 	input             DCAS_FALL_EV,
-	input             BLK_MEM
+	input             BLK_MEM,
+	// karabas: next values for the top, which uses some outputs as clocks (MDP by /IOMM, HDDR by /IOMM and RAS,
+	// DOUBLE_CAS through MC_TYPE, ACCELER by CLK_Z80): the value after this CE (CLK_Z80_NX: after the next CE_N;
+	// IOM_N_NX: the register part, with the asynchronous preset from the pins as they are now). Valid at CE.
+	output            IOMM_N_NX,
+	output            IOM_N_NX,
+	output            RAS_NX,
+	output            MC_TYPE_NX,
+	output            CLK_Z80_NX,
+	output      [3:0] TYPE_NX,
+	output            HDD_DATA_NX
 );
 	parameter MIF_HEX = "dcp.hex";
+	// karabas: REFRESH_REG = 1 when REFRESH is a CLK42 register switching at the same edge as RFC (in the top it is
+	// CT4 of VIDEO2): RFT is then clocked while its preset RFC still has the value before the edge (a race in the
+	// original; the netlist of the whole ACEX resolves it so: an active RFC before the edge swallows the clock).
+	// 0 = REFRESH changes after the edge (the DCP test, tb_eq_dcp): RFC is seen with its new value.
+	parameter REFRESH_REG = 0;
 
 	wire ct0 = CT[0], ct1 = CT[1], ct2 = CT[2];
 	wire ph6 = ct1 & ct2;                      // CT1 & CT2: phase 6
@@ -308,7 +323,7 @@ module sp_dcp (
 			end
 			// RFT: d = GND at the rise of REFRESH, prn = RFC (new value)
 			if (~(ph6 ? (~mc_rq_q | rft_q) : rfc_q)) rft_q <= 1'b1;
-			else if (REFRESH_EV) rft_q <= 1'b0;
+			else if (REFRESH_EV & (~REFRESH_REG | rfc_q)) rft_q <= 1'b0;
 			if (~res_q) begin ras_q <= 1'b1; cas_q <= 1'b1; end
 			else begin
 				if (~(ct1 | (ct0 ^ mc_type)) & (~mc_type | ~rfc_q)) ras_q <= ct2;
@@ -442,4 +457,12 @@ module sp_dcp (
 	assign BLK_R    = sc_e[4];                 // UPDATE = 1
 	assign PN4Q     = pn_e[4];
 	assign DCPP     = dcpp_e;
+	// next values (res_q = 1)
+	assign IOMM_N_NX   = clk21_q ? (io_rw | ~mc_end | wt0_q) : iomm_q;
+	assign IOM_N_NX    = iom_force | (clk21_q ? (iomx_e & iom_e) : iom_q);
+	assign RAS_NX      = (~(ct1 | (ct0 ^ mc_type)) & (~mc_type | ~rfc_q)) ? ct2 : ras_q;
+	assign MC_TYPE_NX  = ph6 ? (mc_rq_q | mc_end) : mct_q;
+	assign CLK_Z80_NX  = clkz_d;
+	assign TYPE_NX     = arr_q[15:12];
+	assign HDD_DATA_NX = hdd_ena & hz_q & ports_x_q;
 endmodule

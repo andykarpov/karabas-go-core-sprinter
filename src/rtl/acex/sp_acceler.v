@@ -51,7 +51,9 @@ module sp_acceler (
 	output            DOUBLE_CAS,
 	input       [7:0] HDDR,
 	input             HDD_FLIP,
-	output reg  [7:0] ACC_DIR
+	output reg  [7:0] ACC_DIR,
+	// karabas: the effective ACC_BLK, for the top's next value of DOUBLE_CAS (= ACC_DIR6 & !START_ACC)
+	output            ACC_BLK
 );
 	// ================= CLK_Z80 registers =================
 	reg        m1m_q = 1'b0;                  // /M1M = DFF(!/M1, CLK_Z80, /RESET)
@@ -261,4 +263,5 @@ module sp_acceler (
 	assign GLISSER    = gliss_q;
 	assign ACC_ON     = ACC_DIR[0];
 	assign DOUBLE_CAS = ACC_DIR[6] & ~start;
+	assign ACC_BLK    = acc_blk;
 endmodule

@@ -7,13 +7,13 @@ S=${QUARTUS_SIM_LIB:-/opt/altera/quartus/eda/sim_lib}
 R=../ahdl
 mkdir -p build
 ref() { [ -s "$R/build/$1/simulation/modelsim/$2.vo" ] || "$R/build_ref.sh" "$3" "$2" "$1" >/dev/null; echo "$R/build/$1/simulation/modelsim/$2.vo"; }
-run() {
+build() {
 	t=$1; shift
 	iverilog -g2005 -o build/tb_eq_$t.vvp -s tb_eq_$t tb_eq_$t.v "$@" "$S/cycloneive_atoms.v" "$S/altera_primitives.v" 2>build/tb_eq_$t.log \
 		|| { grep -v 'coerced\|sorry: procedural continuous' build/tb_eq_$t.log; exit 1; }
-	vvp -n build/tb_eq_$t.vvp | grep -v '\$finish'
 }
-T=${*:-kbd mouse ay max video2 acceler dcp}
+run() { build "$@"; vvp -n build/tb_eq_$1.vvp | grep -v '\$finish'; }
+T=${*:-kbd mouse ay max video2 acceler dcp acex}
 for t in $T; do
 	case $t in
 		kbd) run kbd "$(ref KBD303 KBD 303A)" ../../rtl/acex/sp_kbd.v ;;
@@ -34,6 +34,13 @@ for t in $T; do
 		video2) run video2 "$(ref VID303 VIDEO2 303A)" ../../rtl/acex/sp_video2.v ;;
 		acceler) run acceler "$(ref ACC303 ACCELER 303A)" ../../rtl/acex/sp_acceler.v ;;
 		dcp) run dcp "$(ref DCP303 DCP 303A)" ../../rtl/acex/sp_dcp.v ;;
+		acex) # the whole ACEX (top + submodules) against BASE_303; three scenarios in parallel (bus / 3.5 MHz, CBL, soft
+			# reset / keyboard). Debug: vvp -n build/tb_eq_acex.vvp +scen=N [+stop] [+dbg=<ns>] [+cdbg=<ns>] [+tdbg]
+			A=../../rtl/acex
+			build acex "$(ref BASE_303 BASE_303 303A)" $A/sp_acex.v $A/sp_dcp.v $A/sp_video2.v $A/sp_acceler.v $A/sp_ay.v \
+				$A/sp_kbd.v $A/sp_mouse.v
+			for s in 0 1 2; do vvp -n build/tb_eq_acex.vvp +scen=$s > build/tb_eq_acex_$s.txt 2>&1 & done; wait
+			for s in 0 1 2; do echo "scenario $s:"; grep -v '\$finish' build/tb_eq_acex_$s.txt; done ;;
 		*) echo "unknown test $t"; exit 1 ;;
 	esac
 done

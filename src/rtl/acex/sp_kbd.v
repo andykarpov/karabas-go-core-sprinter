@@ -30,7 +30,14 @@ module sp_kbd (
 	output           KB_CTRL,
 	output           KB_ALT,
 	output           KB_SH,
-	output           INT
+	output           INT,
+	// karabas: next values for the top (TEST_SWITCH is clocked by KB_F12, INT_X by INT): the outputs after this
+	// CE; INT_Q_NX is the register under the INT_ENA preset (INT after this CE = !INT_ENA(next) | INT_Q_NX)
+	output           KB_F12_NX,
+	output           KB_CTRL_NX,
+	output           KB_ALT_NX,
+	output           KB_SH_NX,
+	output           INT_Q_NX
 );
 	parameter MIF_HEX = "kbd_ini2.hex";
 
@@ -181,4 +188,9 @@ module sp_kbd (
 	assign KB_ALT   = alt_q;
 	assign KB_SH    = sh_q;
 	assign INT      = INT_ENA ? int_q : 1'b1;
+	assign KB_F12_NX  = (ct_n == 3'd1) | (ct2_fall ? ~((xxx & f12_x) & ~off_q) : f12_e);
+	assign KB_CTRL_NX = ct2_fall ? (off_q ? ~(ctrl_x & xxx) & ctrl_q : (ctrl_x & xxx) | ctrl_q) : ctrl_q;
+	assign KB_ALT_NX  = ct2_fall ? (off_q ? ~(alt_x & xxx) & alt_q : (alt_x & xxx) | alt_q) : alt_q;
+	assign KB_SH_NX   = ct2_fall ? (off_q ? ~sh_x & sh_q : sh_x | sh_q) : sh_q;
+	assign INT_Q_NX   = INT_ENA ? ct_e == 3'd0 : 1'b1;
 endmodule

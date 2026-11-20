@@ -74,7 +74,13 @@ module sp_video2 (
 	output            WR_PIX,
 	input       [7:0] ZX_PORT,     // [5..0] ZX screen pages, [6] ZX screen write enable, [7] ZX A15'
 	input       [7:0] DIR_PORT,    // [0] SCR128, [3] mode table page, [4] blank, [7..5] border
-	output            INTT
+	output            INTT,
+	// karabas: next values for the top, which clocks registers by CT4 / CTH5 / INTT ...: the counter registers
+	// after this CE (CT_NX[5] / CTH_NX already forced by the current COPY_SINC_H; the top applies the next one),
+	// INTT after this CE. Valid at CE.
+	output      [5:0] CT_NX,
+	output      [5:0] CTH_NX,
+	output            INTT_NX
 );
 	// ================= sync counters CT / CTH / CTV / CTF
 	reg  [5:0] ct_q = 6'd0;
@@ -258,4 +264,7 @@ module sp_video2 (
 	assign V_WEN  = {4{v_we}} | v_en;
 	assign V_CS   = 2'b10;
 	assign WR_PIX = tsn_w3;
+	assign CT_NX   = ct_n;
+	assign CTH_NX  = cth_n;
+	assign INTT_NX = ct5_rise ? ~(inttx & (ctv_n[2:0] == 3'd7)) : intt;
 endmodule
