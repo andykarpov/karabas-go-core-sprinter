@@ -72,3 +72,4 @@ upstream/mame/
 src/sim/ahdl/build/
 src/sim/eq/build/
 __pycache__/
+src/syn/build/
