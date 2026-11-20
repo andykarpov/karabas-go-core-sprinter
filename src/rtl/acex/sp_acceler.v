@@ -53,7 +53,10 @@ module sp_acceler (
 	input             HDD_FLIP,
 	output reg  [7:0] ACC_DIR,
 	// karabas: the effective ACC_BLK, for the top's next value of DOUBLE_CAS (= ACC_DIR6 & !START_ACC)
-	output            ACC_BLK
+	output            ACC_BLK,
+	// karabas: configuration reset (docs/machine.md): registers to power-up, the line buffer zero-filled (256 CLK);
+	// only in if (CFG_RST)
+	input             CFG_RST
 );
 	// ================= CLK_Z80 registers =================
 	reg        m1m_q = 1'b0;                  // /M1M = DFF(!/M1, CLK_Z80, /RESET)
@@ -131,6 +134,9 @@ module sp_acceler (
 	reg  [7:0] ram_q = 8'd0;                  // RAM.q[7..0]
 	integer i;
 	initial for (i = 0; i < 256; i = i + 1) mem[i] = 8'd0;
+	reg  [8:0] rl_a = 9'd0;
+	reg  [7:0] rl_wa = 8'd0;
+	reg        rl_we = 1'b0;
 	wire [7:0] ram_adr = alt ? xcnt_q : cnt_q;
 
 	// ================= !CLK42 registers =================
@@ -171,6 +177,17 @@ module sp_acceler (
 	wire       aa_ena = start | (ACC_DIR[5] & ~(CAS | start) & (go | (go1_q & ACC_DIR[6])));
 	wire [15:0] xsum = {xcnt_q, xagr_q} + {6'd0, aagr_q};
 	wire       mr_ev = CE & MR_N_EV, m1_ev = CE & M1_N_EV, z_ev = CE_N & CLK_Z80_EV;
+
+	wire       mem_we = rl_we | (CE & ram_wr_q);
+	wire [7:0] mem_wa = rl_we ? rl_wa : ram_adr;
+	wire [7:0] mem_wd = rl_we ? 8'd0 : xmd_q;
+	always @(posedge CLK) begin
+		rl_we <= 1'b0;
+		if (CFG_RST) begin rl_we <= ~rl_a[8]; if (~rl_a[8]) rl_a <= rl_a + 9'd1; end
+		else rl_a <= 9'd0;
+		rl_wa <= rl_a[7:0];
+		if (mem_we) mem[mem_wa] <= mem_wd;
+	end
 
 	always @(posedge CLK) begin
 		// ---- CLK_Z80
@@ -239,8 +256,7 @@ module sp_acceler (
 			if (CAS) mdo_q <= (IO_N & ACC_DIR[1]) ? {ram_q, ram_q} : {mdoy_q, mdox_q};
 
 			ram_wr_q <= ~RD_N & ~go & CT[0] & ACC_DIR[1];
-			if (ram_wr_q) mem[ram_adr] <= xmd_q;
-			lat_q <= mem[ram_adr];             // read and write share the address: the read gets the OLD word
+			lat_q <= mem[ram_adr];             // read and write (ram_wr_q, above) share the address: the read gets the OLD word
 			ram_q <= lat_q;
 
 			if (aa_ena) aa_q <= sta_q ? AI : aa_q + 16'd1;
@@ -253,6 +269,16 @@ module sp_acceler (
 			xmd_q  <= xmd_d;
 		end
 		do_q <= (CE_N & ~mcen_q & MC_END) ? MD : do_e;
+
+		if (CFG_RST) begin   // the power-up values above
+			m1m_q <= 1'b0; blkz_q <= 1'b0; rgena_q <= 1'b0; modena_q <= 1'b0; mode3z_q <= 1'b0; prf_q <= 1'b0;
+			ed_q <= 1'b0; reti_q <= 1'b0; ioc_q <= 1'b0; rgacc_q <= 8'd0; mode_q <= 4'd0; fn_q <= 2'd0; blk_q <= 1'b1;
+			go_q <= 1'b1; go1_q <= 1'b0; sta_q <= 1'b0; c4_q <= 1'b0; agrw_q <= 1'b0; agr_q <= 8'd0; rw_q <= 1'b0;
+			cnt_q <= 8'd0; iomd_q <= 1'b0; c7n_q <= 1'b0; wrc7_q <= 1'b0; alt_q <= 1'b0; aagr_q <= 10'd0;
+			xcnt_q <= 8'd0; xagr_q <= 8'd0; ae_q <= 1'b1; aa0_q <= 1'b0; gliss_q <= 1'b0; mdox_q <= 8'd0;
+			mdoy_q <= 8'd0; mdo_q <= 16'd0; ram_wr_q <= 1'b0; aa_q <= 16'd0; lat_q <= 8'd0; ram_q <= 8'd0;
+			mcen_q <= 1'b0; xmd_q <= 8'd0; do_q <= 8'd0;
+		end
 	end
 
 	assign CONTINUE   = acc_end;

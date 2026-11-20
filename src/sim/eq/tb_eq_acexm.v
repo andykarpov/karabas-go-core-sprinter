@@ -105,7 +105,7 @@ module tb_eq_acexm;
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
 		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o),
 		.CT_PH(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq),
-		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash));
+		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	// D / MD compared where the ACEX drives them (the memories answer at other times than the ideal models)

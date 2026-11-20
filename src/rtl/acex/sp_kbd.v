@@ -37,7 +37,10 @@ module sp_kbd (
 	output           KB_CTRL_NX,
 	output           KB_ALT_NX,
 	output           KB_SH_NX,
-	output           INT_Q_NX
+	output           INT_Q_NX,
+	// karabas: configuration reset (docs/machine.md): while high every register goes to its power-up value and the
+	// table RAM is reloaded from KBD_INI2 (256 CLK; sp_acex holds it long enough). Use only in if (CFG_RST).
+	input            CFG_RST
 );
 	parameter MIF_HEX = "kbd_ini2.hex";
 
@@ -113,6 +116,16 @@ module sp_kbd (
 	reg  [7:0] kd = 8'hFF;
 	initial $readmemh(MIF_HEX, mem);
 	wire wr_kbd_n = kclk_q | ~ct2d_q | ~(rxa_q == 2'd3);
+	// karabas: the reload of the table on CFG_RST (the configuration of the original loads the MIF): a copy of the
+	// MIF as a ROM, written word by word through the one write port of the RAM
+	reg  [7:0] ini [0:255];
+	initial $readmemh(MIF_HEX, ini);
+	reg  [8:0] rl_a = 9'd0;
+	reg  [7:0] rl_wa = 8'd0, rl_d = 8'd0;
+	reg        rl_we = 1'b0;
+	wire       mem_we = rl_we | (CE & ~wr_kbd_n);
+	wire [7:0] mem_wa = rl_we ? rl_wa : ka;
+	wire [7:0] mem_wd = rl_we ? rl_d : {2'b11, kdx_q};
 
 	// ---- matrix read: KBD[] accumulates the selected rows, preset while P = 0
 	reg        p_q = 1'b0;                // DFF(VCC, KB_MA2, clrn = !/IO & ENA)
@@ -123,7 +136,17 @@ module sp_kbd (
 
 	reg        int_q = 1'b1;
 
-	always @(posedge CLK) if (CE) begin
+	always @(posedge CLK) begin
+		rl_we <= 1'b0;
+		if (CFG_RST) begin rl_we <= ~rl_a[8]; if (~rl_a[8]) rl_a <= rl_a + 9'd1; end
+		else rl_a <= 9'd0;
+		rl_wa <= rl_a[7:0];
+		rl_d  <= ini[rl_a[7:0]];
+		if (mem_we) mem[mem_wa] <= mem_wd;
+	end
+
+	always @(posedge CLK) begin
+	if (CE) begin
 		cc_q    <= KBD_CC;
 		ct_q    <= ct_r;
 
@@ -169,16 +192,21 @@ module sp_kbd (
 			kdx_q <= off_q ? (kd[5:0] | ~kdxx_q) : (kd[5:0] & kdxx_q);
 		ct2d_q <= ct_e == 3'd2;
 
-		if (!wr_kbd_n) begin
-			mem[ka] <= {2'b11, kdx_q};
-			kd      <= {2'b11, kdx_q};
-		end else
-			kd <= mem[ka];
+		if (!wr_kbd_n) kd <= {2'b11, kdx_q};   // write-first (the RAM write is above)
+		else kd <= mem[mem_wa];   // = ka; the reload address only during CFG_RST (kd reset then): one address keeps BRAM
 
 		p_q   <= (ma2_rise & ~IO_N & ENA) ? 1'b1 : p_e;
 		kbd_q <= p_e ? kbd_q & (kd[5:0] | {6{mxa_q}}) : 6'h3F;
 
 		int_q <= INT_ENA ? ct_e == 3'd0 : 1'b1;   // DFF(KB_CT == 0, CLK42, , INT_ENA): prn
+	end
+	if (CFG_RST) begin   // the power-up values above
+		cc_q <= 1'b0; ct_q <= 3'd7; nc_q <= 1'b0; nc_p <= 1'b0; d_q <= 11'd0; ct0_q <= 1'b0; ct1_q <= 1'b0;
+		off_q <= 1'b0; ext_q <= 1'b0; ctrl_q <= 1'b0; alt_q <= 1'b0; sh_q <= 1'b0; f12_q <= 1'b1; rst_q <= 1'b1;
+		kclk_q <= 1'b0; rxa_q <= 2'd0; g_q <= 1'b0; iod_q <= 1'b0; io0_q <= 1'b0; ma_q <= 3'd0; mxa_q <= 1'b0;
+		kdd_q <= 8'hC0; kdxx_q <= 6'd0; kdx_q <= 6'd0; ct2d_q <= 1'b0; kd <= 8'hFF; p_q <= 1'b0; kbd_q <= 6'h3F;
+		int_q <= 1'b1;
+	end
 	end
 
 	assign KBO      = {2'b11, kbd_e};

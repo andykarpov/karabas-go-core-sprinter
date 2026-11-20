@@ -91,7 +91,10 @@ module sp_dcp (
 	output            MC_TYPE_NX,
 	output            CLK_Z80_NX,
 	output      [3:0] TYPE_NX,
-	output            HDD_DATA_NX
+	output            HDD_DATA_NX,
+	// karabas: configuration reset (docs/machine.md): every register to its power-up value, MEM reloaded from DCP.MIF
+	// (256 CLK). Use only in if (CFG_RST).
+	input             CFG_RST
 );
 	parameter MIF_HEX = "dcp.hex";
 	// karabas: REFRESH_REG = 1 when REFRESH is a CLK42 register switching at the same edge as RFC (in the top it is
@@ -115,6 +118,13 @@ module sp_dcp (
 	// Both addresses = PGS.
 	reg [15:0] mem [0:255];
 	initial $readmemh(MIF_HEX, mem);
+	// karabas: reload on CFG_RST from a ROM copy of the MIF through the write port
+	reg [15:0] ini [0:255];
+	initial $readmemh(MIF_HEX, ini);
+	reg  [8:0] rl_a = 9'd0;
+	reg  [7:0] rl_wa = 8'd0;
+	reg [15:0] rl_d = 16'd0;
+	reg        rl_we = 1'b0;
 	reg [15:0] arr_q = 16'd0;                  // the array word at the address latched at the last CE
 	reg [15:0] q = 16'd0;                      // MEM.q: output register
 
@@ -278,6 +288,18 @@ module sp_dcp (
 	endcase
 
 	wire tick = CE | CE_N;
+	wire        mem_we = rl_we | (CE & memwr);
+	wire  [7:0] mem_wa = rl_we ? rl_wa : pgs_q;
+	wire [15:0] mem_wd = rl_we ? rl_d : {q[15:8], DI};
+	always @(posedge CLK) begin
+		rl_we <= 1'b0;
+		if (CFG_RST) begin rl_we <= ~rl_a[8]; if (~rl_a[8]) rl_a <= rl_a + 9'd1; end
+		else rl_a <= 9'd0;
+		rl_wa <= rl_a[7:0];
+		rl_d  <= ini[rl_a[7:0]];
+		if (mem_we) mem[mem_wa] <= mem_wd;
+	end
+
 	always @(posedge CLK) begin
 		// ---- async-forced registers keep their effective value at every edge
 		if (tick) begin
@@ -306,8 +328,7 @@ module sp_dcp (
 			// The read port sees the old word in the cycle of a write to the same address (mixed-port read during
 			// write = old data, as the reference M9K: the written byte reaches MEM.q two CEs after the write edge)
 			q <= arr_q;
-			arr_q <= mem[pgs_q];
-			if (memwr) mem[pgs_q] <= {q[15:8], DI};
+			arr_q <= mem[pgs_q];                // the write (memwr) is above
 
 			// memory cycle
 			if (ph6) begin
@@ -413,6 +434,19 @@ module sp_dcp (
 			else if (~res_q) rd_kp11_q <= 1'b1;
 			if (~rd_kp11_e & (~res_q | (clk21_q ? ma_ct_q != 2'd0 : rd_kp11_q))) kp11_q <= ~kp11_q;
 			pgs_q <= (IO_N & ~(A[14] & A[15] & ~starting)) ? {2'b11, mpgs} : mc_end ? dd_e : 8'd0;
+		end
+
+		if (CFG_RST) begin   // the power-up values above
+			arr_q <= 16'd0; q <= 16'd0; pn_q <= 8'd0; sc_q <= 8'd0; cnf_q <= 8'd0; sys_q <= 1'b0; arom16_q <= 1'b0;
+			tb_sw_q <= 1'b1; st_q <= 1'b0; mc_rq_q <= 1'b0; mcb_q <= 1'b1; mce_q <= 1'b0; mct_q <= 1'b1; mcw_q <= 1'b1;
+			rfc_q <= 1'b0; rft_q <= 1'b1; ras_q <= 1'b1; cas_q <= 1'b1; io_rw_q <= 1'b1; s1_q <= 1'b1; s2_q <= 1'b1;
+			mem_rw_q <= 1'b1; io_rwm_q <= 1'b1; graf_q <= 1'b0; clk21_q <= 1'b0; t35_q <= 1'b0; clkz_q <= 1'b0;
+			tb1_q <= 1'b1; turbo_q <= 1'b0; ma_ct_q <= 2'd0; ma_q <= 12'd0; mca_q <= 2'd0; hdd_a_q <= 3'd0;
+			wr_tm9_q <= 1'b1; rd_kp11_q <= 1'b1; kp11_q <= 1'b0; awg_q <= 1'b1; awg_y <= 1'b0; iomm_q <= 1'b1;
+			iomx_q <= 1'b1; iomy_q <= 1'b1; iomz_q <= 1'b1; iom_q <= 1'b1; ports_x_q <= 1'b0; wt_q <= 4'hF;
+			wt0_q <= 1'b0; wt01_q <= 1'b0; w1_q <= 1'b0; w2_q <= 1'b0; nio_q <= 1'b0; hz_q <= 1'b0;
+			hdd_data_q <= 1'b0; hdd_flip_q <= 1'b0; dcp_res_q <= 1'b0; mced_q <= 1'b0; dcpp_q <= 8'd0; dd_q <= 8'd0;
+			pgs_q <= 8'd0; m1_q <= 1'b0; m2_q <= 1'b0; memwr_q <= 1'b0;
 		end
 	end
 

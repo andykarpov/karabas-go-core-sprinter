@@ -11,7 +11,8 @@ module sp_mouse (
 	output     [9:0] OUT_X,
 	output     [9:0] OUT_Y,
 	output     [1:0] OUT_K,
-	output           INT
+	output           INT,
+	input            CFG_RST     // karabas: configuration reset: registers to power-up (docs/machine.md)
 );
 	wire       ev = CE & CLK_EV;
 
@@ -29,7 +30,8 @@ module sp_mouse (
 	wire [7:0] ddx = {rgk_q[1:0], rg_q[6:1]};
 	wire [7:0] ddy = {rgk_q[3:2], rg_q[6:1]};
 
-	always @(posedge CLK) if (ev) begin
+	always @(posedge CLK) begin
+	if (ev) begin
 		md_q <= MOUSE_D;
 		ct_q <= ~imp ? 4'd0 : (ct_e == 4'd12) ? 4'd0 : ct_e + 4'd1;
 		if ((ct_e == 4'd4) | ~rg_q[0])
@@ -43,6 +45,11 @@ module sp_mouse (
 		if (~rg_q[7] & (state_q == 2'd2) & ~rg_q[0])
 			sum_y <= sum_y + {{2{ddy[7]}}, ddy};
 		int_q <= (state_q == 2'd2) & ~rg_q[0];
+	end
+	if (CFG_RST) begin
+		md_q <= 1'b0; ct_q <= 4'd0; rg_q <= 10'd0; state_q <= 2'd0; rgk_q <= 6'd0; sum_x <= 10'd0; sum_y <= 10'd0;
+		int_q <= 1'b0;
+	end
 	end
 
 	assign OUT_X = sum_x;

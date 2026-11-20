@@ -89,7 +89,8 @@ module sp_video2 (
 	output            MLO_RQ,      // byte 0 of the mode word may go to D_PIC0 at c14 (cycle CT[5:3] = 0 with MODE0[5]; from c1)
 	output     [17:1] VA_ATR,      // the ZX attribute address of this cycle (valid when ATR_ZX, from c1)
 	output            ATR_ZX,      // MODE0[4]: ZX screen (the attribute address does not depend on CT)
-	output            PIX_RQ       // D_PIC0 takes the pixel byte at c8 of this cycle and it can be seen (from c1)
+	output            PIX_RQ,      // D_PIC0 takes the pixel byte at c8 of this cycle and it can be seen (from c1)
+	input             CFG_RST      // karabas: configuration reset: registers to power-up (docs/machine.md); only in if ()
 );
 	// ================= sync counters CT / CTH / CTV / CTF
 	reg  [5:0] ct_q = 6'd0;
@@ -255,6 +256,15 @@ module sp_video2 (
 		if (CE_N) begin
 			dp0_ <= VDM0; dp1_ <= VDM1; dp2_ <= VDM2; dp3_ <= VDM3;
 			v_we <= 1'b1;                               // V_WE.prn = V_WE_R = DFF(GND, !CLK42, , !V_WE)
+		end
+		if (CFG_RST) begin   // the power-up values above
+			ct_q <= 6'd0; cth_q <= 6'd50; ctv_q <= 9'd290; ctf_q <= 7'd0; ct53_en <= 1'b0; cth_en <= 1'b0; ctv_en <= 1'b0;
+			vcm <= 3'd0; wr_q <= 1'b0; e_wrd <= 1'b0; vxa <= 20'd0; dbl <= 1'b0; vxd0 <= 8'd0; vxd1 <= 8'd0;
+			vxd2 <= 8'd0; vxd3 <= 8'd0; mxwe <= 1'b1; v_we <= 1'b1; v_en <= 4'd0; mode0 <= 8'd0; mode1 <= 8'd0;
+			mode2 <= 8'd0; wr_pic <= 1'b0; wr_col <= 1'b0; wr_mode <= 1'b0; tsn_w3 <= 1'b0; lwr_pic <= 1'b0;
+			lwr_col <= 1'b0; bord <= 1'b0; blank <= 1'b0; inttx <= 1'b0; wide <= 1'b0; bordp <= 1'b0; intt <= 1'b0;
+			x_mode <= 4'd0; vla <= 18'd0; sva <= 18'd0; vla_d <= 2'd0; ldp_a <= 1'b0; ldp_b <= 1'b0; dp0_ <= 8'd0;
+			dp1_ <= 8'd0; dp2_ <= 8'd0; dp3_ <= 8'd0; d_pic0 <= 8'd0; dcol <= 8'd0; brva <= 8'd0; rbrva <= 3'd0;
 		end
 	end
 

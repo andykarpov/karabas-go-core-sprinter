@@ -21,7 +21,10 @@ module sp_ay (
 	output     [9:0] AY_CH_L,
 	output     [9:0] AY_CH_R,
 	output reg       AY_CH_VAL = 1'b0,
-	input            BEEPER
+	input            BEEPER,
+	// karabas: configuration reset (docs/machine.md): every register to its power-up value, the microprogram RAM
+	// reloaded from AY.MIF (256 CLK). Use only in if (CFG_RST).
+	input            CFG_RST
 );
 	parameter MIF_HEX = "ay.hex";
 
@@ -45,6 +48,12 @@ module sp_ay (
 	// ---- microprogram RAM: lpm_ram_dq with inclock and outclock CLK42 (address, data, we and output registered)
 	reg  [7:0] mem [0:255];
 	initial $readmemh(MIF_HEX, mem);
+	// karabas: reload on CFG_RST from a ROM copy of the MIF through the write port
+	reg  [7:0] ini [0:255];
+	initial $readmemh(MIF_HEX, ini);
+	reg  [8:0] rl_a = 9'd0;
+	reg  [7:0] rl_wa = 8'd0, rl_d = 8'd0;
+	reg        rl_we = 1'b0;
 	reg  [7:0] ram_q = 8'd0;                    // read in the CE after the address latch
 	reg  [7:0] ay_do = 8'd0;                    // output register
 	reg  [7:0] dat = 8'd0;
@@ -104,7 +113,20 @@ module sp_ay (
 	wire       ccc1 = ccc[1];
 	wire [8:0] dat_sub = {1'b0, ay_do} - {8'd0, sb};
 
-	always @(posedge CLK) if (CE) begin
+	wire       mem_we = rl_we | (CE & ay_wr);
+	wire [7:0] mem_wa = rl_we ? rl_wa : ax;
+	wire [7:0] mem_wd = rl_we ? rl_d : di;
+	always @(posedge CLK) begin
+		rl_we <= 1'b0;
+		if (CFG_RST) begin rl_we <= ~rl_a[8]; if (~rl_a[8]) rl_a <= rl_a + 9'd1; end
+		else rl_a <= 9'd0;
+		rl_wa <= rl_a[7:0];
+		rl_d  <= ini[rl_a[7:0]];
+		if (mem_we) mem[mem_wa] <= mem_wd;
+	end
+
+	always @(posedge CLK) begin
+	if (CE) begin
 		ccc <= AY_T;
 		if (ccc1) begin bd_q <= D; bwr <= AY_D_WR; end
 		if (bd_clr75) bd_q[7:5] <= 3'b000;
@@ -119,8 +141,8 @@ module sp_ay (
 		else if (ccc7_rise) begin f_res1 <= 1'b1; f_res <= f_res1_e; end
 
 		// RAM: address / data / we latched now, the word read now goes to the output register at the next CE
-		if (ay_wr) begin mem[ax] <= di; ram_q <= di; end
-		else ram_q <= mem[ax];
+		if (ay_wr) ram_q <= di;                 // write-first (the RAM write is above)
+		else ram_q <= mem[mem_wa];   // = ax; the reload address only during CFG_RST: one address keeps BRAM
 		ay_do <= ram_q;
 
 		if (~ccc[1] & ~ccc[0]) dd <= ay_do;
@@ -202,6 +224,19 @@ module sp_ay (
 		if (lclr) lx <= 11'd0; else if (lena2) lx <= lx + {2'b00, cs};
 		if (lclr) rx <= 11'd0; else if (rena2) rx <= rx + {2'b00, cs};
 		AY_CH_VAL <= ccc[7:2] == 6'b111100;
+	end
+	if (CFG_RST) begin   // the power-up values above
+		AY_CH_A <= 4'd0; AY_CH_B <= 4'd0; AY_CH_C <= 4'd0; AY_CH_VAL <= 1'b0; ccc <= 9'd0; adr <= 8'd0; aax <= 2'd0;
+		bd_q <= 8'd0; bwr <= 1'b0; f_r1 <= 1'b0; f_res1 <= 1'b0; f_res <= 1'b0; ram_q <= 8'd0; ay_do <= 8'd0;
+		dat <= 8'd0; c <= 1'b0; cxx_q <= 1'b0; cx_q <= 1'b0; dd <= 8'd0; dat_wr <= 1'b0; dat_wr2 <= 1'b0; n5 <= 1'b0;
+		d7 <= 1'b0; sb <= 1'b0; do0d <= 1'b0; p_cx <= 1'b0; e_cx <= 1'b0; s010 <= 1'b0; rexp <= 1'b0; out_q <= 3'd0;
+		outs1 <= 1'b0; outs2 <= 1'b0; outs3 <= 1'b0; outsx <= 1'b0; sh_q <= 1'b0; amp <= 4'd0; aa <= 4'd0;
+		dq1 <= 4'd0; dq2 <= 4'd0; dq3 <= 4'd0; dqx_q <= 4'd0; ch_mix <= 1'b0; bp <= 1'b0; sh_r <= 17'd0;
+		va_ena <= 1'b0; vcnt <= 6'd0; x_ena <= 1'b0; gf_ena <= 1'b0; x_ <= 6'd0; gf <= 4'd0; bblk <= 1'b0;
+		ablk <= 1'b0; binv <= 1'b0; cs <= 9'd0; outs1x <= 1'b0; outs2x <= 1'b0; outs3x <= 1'b0; outs1y <= 1'b0;
+		outs3y <= 1'b0; lclr <= 1'b0; lena1 <= 1'b0; lena2 <= 1'b0; rena1 <= 1'b0; rena2 <= 1'b0; lx <= 11'd0;
+		rx <= 11'd0;
+	end
 	end
 
 	assign DO = dd;
