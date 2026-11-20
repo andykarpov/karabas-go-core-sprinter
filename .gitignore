@@ -70,3 +70,4 @@ src/kg_*.stamp
 src/build_*.log
 upstream/mame/
 src/sim/ahdl/build/
+src/sim/eq/build/
