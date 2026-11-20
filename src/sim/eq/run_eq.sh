@@ -13,7 +13,7 @@ run() {
 		|| { grep -v 'coerced\|sorry: procedural continuous' build/tb_eq_$t.log; exit 1; }
 	vvp -n build/tb_eq_$t.vvp | grep -v '\$finish'
 }
-T=${*:-kbd mouse ay max video2}
+T=${*:-kbd mouse ay max video2 acceler}
 for t in $T; do
 	case $t in
 		kbd) run kbd "$(ref KBD303 KBD 303A)" ../../rtl/acex/sp_kbd.v ;;
@@ -32,6 +32,7 @@ for t in $T; do
 			python3 -I vo_loop_delay.py "$(ref MAX_T SP2_MAX "$PWD/build/max_t")" build/max_t.vo 'THDD|NO_HDD|T320|TURBING|RDAT_X' 2>/dev/null
 			run max build/max_t.vo ../../rtl/acex/sp_max.v ;;
 		video2) run video2 "$(ref VID303 VIDEO2 303A)" ../../rtl/acex/sp_video2.v ;;
+		acceler) run acceler "$(ref ACC303 ACCELER 303A)" ../../rtl/acex/sp_acceler.v ;;
 		*) echo "unknown test $t"; exit 1 ;;
 	esac
 done
