@@ -77,7 +77,7 @@ module sp_acceler (
 	// STATE_EI, RETN, CB_CMD, ID_CMD drive nothing (dead in the AHDL) and are left out.
 
 	// ================= /M1 register =================
-	reg        blk_q = 1'b0;                  // ACC_BLK, prn = /RESET & ACC_MODE3
+	reg        blk_q = 1'b1;                  // ACC_BLK, prn = /RESET & ACC_MODE3
 	wire       acc_blk = (RESET_N & mode3) ? blk_q : 1'b1;
 
 	// ACC_DIR: 0 on, 1 via the buffer, 2 count, 3 load RGACC, 4 vertical (AGR + 1), 5 horizontal (AA + 1), 6 two bytes
@@ -95,7 +95,7 @@ module sp_acceler (
 	wire       start = MR_N | ~M1_N | ~RF_N | ~acc_blk | ~ACC_DIR[0] | MC_TYPE;
 
 	// ================= CLK42 registers =================
-	reg        go_q = 1'b0;                   // ACC_GO = DFFE(CAS | START_ACC, CLK42, , !/MR & /M1, CT1)
+	reg        go_q = 1'b1;                   // ACC_GO = DFFE(CAS | START_ACC, CLK42, , !/MR & /M1, CT1)
 	wire       go = (~MR_N & M1_N) ? go_q : 1'b1;
 	reg        go1_q = 1'b0;                  // ACC_GO_1
 	reg        sta_q = 1'b0;                  // DFF(START_ACC) = AA_LOAD
@@ -112,7 +112,7 @@ module sp_acceler (
 	wire       alt = RESET_N & alt_q;         // /RESET clears it
 	reg  [9:0] aagr_q = 10'd0;                // AAGR, XCNT, XAGR: second buffer address, (XCNT, XAGR) += AAGR
 	reg  [7:0] xcnt_q = 8'd0, xagr_q = 8'd0;
-	reg        ae_q = 1'b0;                   // ACC_END, prn = /M1
+	reg        ae_q = 1'b1;                   // ACC_END, prn = /M1
 	wire       acc_end = M1_N ? ae_q : 1'b1;
 	reg        aa0_q = 1'b0;                  // DFFE(AA0, CLK42, , , CT2 & CT1): byte of MDI
 	reg        gliss_q = 1'b0;                // GLISS_R

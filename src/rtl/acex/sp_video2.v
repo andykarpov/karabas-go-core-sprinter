@@ -83,8 +83,8 @@ module sp_video2 (
 );
 	// ================= sync counters CT / CTH / CTV / CTF
 	reg  [5:0] ct_q = 6'd0;
-	reg  [5:0] cth_q = 6'd0;
-	reg  [8:0] ctv_q = 9'd0;
+	reg  [5:0] cth_q = 6'd50;   // power-up as the netlist: preset bits high
+	reg  [8:0] ctv_q = 9'd290;
 	reg  [6:0] ctf_q = 7'd0;
 	reg        ct53_en = 1'b0, cth_en = 1'b0, ctv_en = 1'b0;   // DFF enables
 	wire [5:0] ct_e  = {COPY_SINC_H ? 1'b0 : ct_q[5], ct_q[4:0]};   // CT5.clrn = !COPY_SINC_H

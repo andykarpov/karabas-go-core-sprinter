@@ -93,15 +93,7 @@ module tb_eq_acex;
 		.DAC_BCK(dac_bck_o), .MD_I(md), .MD_O(md_o), .MD_OE(md_oe_o), .MA(ma_o), .RAS_(ras_o), .CAS_(cas_o),
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
 		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o));
-	// the netlist powers up the video counters with their preset bits high (CTH = 50, CTV = 290; stored inverted)
-	// and the keyboard / accelerator registers with a preset high (KB_CT, KB_F12, KB_RESET, INT, KDD[7..6], KBD[],
-	// ACC_GO, ACC_END, ACC_BLK)
-	initial #1 begin
-		dut.SVIDEO.cth_q = 6'd50; dut.SVIDEO.ctv_q = 9'd290;
-		dut.KEYS.ct_q = 3'd7; dut.KEYS.f12_q = 1'b1; dut.KEYS.rst_q = 1'b1; dut.KEYS.int_q = 1'b1;
-		dut.KEYS.kdd_q[7:6] = 2'b11; dut.KEYS.kbd_q = 6'h3F;
-		dut.ACC.go_q = 1'b1; dut.ACC.ae_q = 1'b1; dut.ACC.blk_q = 1'b1;   // ACC_GO, ACC_END, ACC_BLK
-	end
+	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	wire [7:0] d_pin_o = d_oe_o ? d_o : d;
 	wire [15:0] md_pin_o = md_oe_o ? md_o : md;

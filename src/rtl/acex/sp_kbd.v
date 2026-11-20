@@ -43,7 +43,7 @@ module sp_kbd (
 
 	// ---- frame timeout counter KB_CT: decrements on CLK_K, preset to 7 while the (registered) PS/2 clock is low
 	reg        cc_q = 1'b0;               // DFF(KBD_CC, CLK42): KB_CT[].prn
-	reg  [2:0] ct_q = 3'd0;
+	reg  [2:0] ct_q = 3'd7;      // power-up as the netlist: preset bits high (also f12, rst, kdd, kbd, int)
 	wire [2:0] ct_e = cc_q ? ct_q : 3'd7;
 	wire       k_rise = CLK_K_EV;
 	wire [2:0] ct_dec = (ct_e == 3'd0) ? 3'd0 : ct_e - 3'd1;
@@ -72,8 +72,8 @@ module sp_kbd (
 
 	// ---- modifiers, F12, reset: clocked by !KB_CT2 rising
 	reg ctrl_q = 1'b0, alt_q = 1'b0, sh_q = 1'b0;
-	reg f12_q = 1'b0;                     // prn = !(KB_CT == 1)
-	reg rst_q = 1'b0;                     // prn  = !DFF(KB_CT == 1)
+	reg f12_q = 1'b1;                     // prn = !(KB_CT == 1)
+	reg rst_q = 1'b1;                     // prn  = !DFF(KB_CT == 1)
 	wire f12_e = (ct_e == 3'd1) ? 1'b1 : f12_q;
 	wire rst_e = ct1_q ? 1'b1 : rst_q;
 
@@ -95,7 +95,7 @@ module sp_kbd (
 	wire [2:0] ma_n = IO_N ? 3'd0 : ma_r;              // effective after this CE (DFF(/IO) = IO_N)
 	reg        mxa_q = 1'b0;
 
-	reg  [7:0] kdd_q = 8'd0;              // KDD[7..6].prn = !KB_CT2
+	reg  [7:0] kdd_q = 8'hC0;             // KDD[7..6].prn = !KB_CT2
 	wire [7:0] kdd_e = {ct_e[2] ? 2'b11 : kdd_q[7:6], kdd_q[5:0]};
 	reg  [5:0] kdxx_q = 6'd0, kdx_q = 6'd0;
 	reg        ct2d_q = 1'b0;             // DFF(KB_CT == 2)
@@ -118,10 +118,10 @@ module sp_kbd (
 	reg        p_q = 1'b0;                // DFF(VCC, KB_MA2, clrn = !/IO & ENA)
 	wire       p_e = (~IO_N & ENA) ? p_q : 1'b0;
 	wire       ma2_rise = ~ma_e[2] & ma_n[2];
-	reg  [5:0] kbd_q = 6'h00;
+	reg  [5:0] kbd_q = 6'h3F;
 	wire [5:0] kbd_e = p_e ? kbd_q : 6'h3F;
 
-	reg        int_q = 1'b0;
+	reg        int_q = 1'b1;
 
 	always @(posedge CLK) if (CE) begin
 		cc_q    <= KBD_CC;
