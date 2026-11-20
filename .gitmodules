@@ -1,0 +1,15 @@
+[submodule "modules"]
+	path = modules
+	url = ../karabas-go-modules.git
+[submodule "upstream/sprinter-hard"]
+	path = upstream/sprinter-hard
+	url = https://gitlab.com/sprinter-computer/hard.git
+[submodule "upstream/sprinter-bios"]
+	path = upstream/sprinter-bios
+	url = https://gitlab.com/sprinter-computer/bios.git
+[submodule "upstream/sprinter-dos"]
+	path = upstream/sprinter-dos
+	url = https://gitlab.com/sprinter-computer/dos.git
+[submodule "upstream/sprinter-apps"]
+	path = upstream/sprinter-apps
+	url = https://gitlab.com/sprinter-computer/apps.git
