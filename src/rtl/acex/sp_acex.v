@@ -26,8 +26,8 @@
 //   by WR_AWG), RAS_, CAS_[3..0] (byte lanes: CAS_0 / _1 = MD[7..0] / [15..8] of bank MCA1 = 0, CAS_2 / _3 of bank 1;
 //   all low with RAS_ high = CBR refresh), WE_N (late write: low from the CE_N after CAS_ to the end of RAS_),
 //   MD_O / MD_OE (write data, also the data of port writes to the peripherals), MD_I (read data, peripheral data).
-// - video RAM: VA (32-bit word), V_WR[3..0] per byte, VDx_O / VD_OE (write data), VDx_I (read data of VA presented at
-//   the previous CE, held at the CE_N after it and at the next CE); WR_COL = the palette strobe of the RGB DAC latch.
+// - video RAM: VA (32-bit word), V_WR[3..0] per byte, VDx_O / VD_OE (write data), VDx_I (read data of the VA presented at
+//   CE n, needed at CE n+2 and CE_N n+3, docs/memtiming.md); WR_COL = the palette strobe of the RGB DAC latch.
 // - ROM / cache / ISA: CS_ROM, CS_CASH (active low, from the fall of /MR to its rise), RA[17..14] = 16 KB page,
 //   data on D_I; XACS = flash write strobe (ROM_RG4).
 // - I2S: DAC_BCK = CT2 (7 MHz), DAC_WS = CTH1, DAC_DATA (16 bits per channel, MSB first).

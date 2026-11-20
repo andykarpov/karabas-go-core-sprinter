@@ -184,7 +184,10 @@ module tb_eq_acex;
 	// ---- video RAM
 	reg [7:0] vram [0:262143];
 	wire [7:0] vq0, vq1, vq2, vq3;
-	wire [17:0] vi0 = {va_r, 2'd0}, vi1 = {va_r, 2'd1}, vi2 = {va_r, 2'd2}, vi3 = {va_r, 2'd3};
+	// the data of the VA presented at CE n is used at CE n+2 (MODE) and CE_N n+3 (D_PICx_), docs/memtiming.md: the
+	// model answers the VA of the previous CLK (with the VA of the same CLK only 44 of 1174 pixel loads got their byte)
+	reg [15:0] va_lag = 0; always @(posedge clk) va_lag <= va_r;
+	wire [17:0] vi0 = {va_lag, 2'd0}, vi1 = {va_lag, 2'd1}, vi2 = {va_lag, 2'd2}, vi3 = {va_lag, 2'd3};
 	assign #3 vq0 = (vram[vi0] === 8'hxx) ? dflt(vi0, 8'd5) : vram[vi0];
 	assign #3 vq1 = (vram[vi1] === 8'hxx) ? dflt(vi1, 8'd5) : vram[vi1];
 	assign #3 vq2 = (vram[vi2] === 8'hxx) ? dflt(vi2, 8'd5) : vram[vi2];

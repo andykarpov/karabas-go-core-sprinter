@@ -7,10 +7,9 @@
 // - COPY_SINC_H / COPY_SINC_V, ZX_PORT, DIR_PORT, VAI, MDI, DOUBLE_CAS: change after a CE (registers of the top on CLK42;
 //   DIR_PORT = BORDER / RGMOD registers, any time).
 // - WR: the top's DFF(.., !CLK42): changes after a CE_N.
-// - VDM0..3: the video RAM data bus as seen by the FPGA (= VDO while V_WEN is low). It must hold, at a CE_N, the data
-//   of the address VAO that was presented at the CE half a cycle before (D_PICx_ capture), and at the following CE
-//   still that data (MODE0..2 capture on WR_MODE, which in the original is taken "slightly after" the edge through two
-//   LCELLs, i.e. on the hold time of the SRAM).
+// - VDM0..3: the video RAM data bus as seen by the FPGA (= VDO while V_WEN is low). The data of the address VAO
+//   presented at CE n is taken at CE n+2 (MODE0..2 on WR_MODE) and at CE_N n+3 (D_PICx_): one CE later than the
+//   address alone suggests (measured over all loads, docs/memtiming.md); the controller may start from VAO's next value.
 // Video RAM outputs: VAO (word address, 32-bit words), VDO0..3 (write data; the top drives VD only where V_WEN = 0),
 // V_WR[3..0] (/WE per byte, low from a CE to the next CE_N), V_WEN[3..0] (= V_WR in the functional netlist, see below),
 // V_CS[1..0].
