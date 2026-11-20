@@ -71,5 +71,6 @@ src/build_*.log
 upstream/mame/
 src/sim/ahdl/build/
 src/sim/eq/build/
+src/sim/cpu/build/
 __pycache__/
 src/syn/build/
