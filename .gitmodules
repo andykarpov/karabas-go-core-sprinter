@@ -13,3 +13,12 @@
 [submodule "upstream/sprinter-apps"]
 	path = upstream/sprinter-apps
 	url = https://gitlab.com/sprinter-computer/apps.git
+[submodule "upstream/tt-sp2000-acex"]
+	path = upstream/tt-sp2000-acex
+	url = https://github.com/Tolik-Trek/SP2000-ACEX.git
+[submodule "upstream/tt-scroll-cnf"]
+	path = upstream/tt-scroll-cnf
+	url = https://github.com/Tolik-Trek/Scroll_CNF.git
+[submodule "upstream/tt-sprinter-bios"]
+	path = upstream/tt-sprinter-bios
+	url = https://zxgit.org/Tolik-Trek/Sprinter-BIOS.git
