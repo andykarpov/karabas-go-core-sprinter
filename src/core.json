@@ -1,0 +1,30 @@
+{
+    "id": "sprinter",
+    "name": "Sprinter Sp2000",
+    "visible": true,
+    "type": "osd",
+    "order": 44,
+    "eeprom_bank": 255,
+    "rtc_mode": 0,
+    "roms": [
+        {
+            "filename": "roms/kg/sp2k-3.04.rom",
+            "address": 0
+        }
+    ],
+    "boards": {
+        "minig": {
+            "link": 2,
+            "build": "26112102",
+            "bitstream": "karabas_minig.bin"
+        }
+    },
+    "osd": [
+        {
+            "type": "T",
+            "name": "Reset",
+            "index": 0,
+            "hotkey": "Menu+F12"
+        }
+    ]
+}
