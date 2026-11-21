@@ -7,7 +7,8 @@
 // rise of CS, the SDRAM word at c13 / c14, the write lanes, the protocol checks of the models, and all memories at
 // the end of the run. Debug: vvp -n build/tb_eq_acexm.vvp +scen=N [+stop] [+dbg=<ns>]
 //
-// sp_acex (the whole ACEX: top + DCP, VIDEO2, ACCELER, AY, KBD, MOUSE) against the netlist of BASE_303.TDF (3.03a).
+// sp_acex (the whole ACEX: top + DCP, VIDEO2, ACCELER, AY, KBD, MOUSE) against the netlist of BASE_303.TDF (3.03a);
+// -DK30: PERS_K30 = 1 against the k30 netlist (SP2_ACEX), as tb_eq_acex.v.
 // CLK = 84 MHz, clk42 toggles at every CLK edge and is the reference's TG42; CE = ~clk42 (CLK42 rises at our CE edge),
 // CE_N = clk42. One set of models around both, driven by the reference's pins only:
 // - Z80 bus model on the reference CLKZ1 (21 / 3.5 MHz), sampling its /WAIT: M1 with refresh, memory read / write,
@@ -72,6 +73,21 @@ module tb_eq_acexm;
 	always @(vd0) vd0_k = keep(vd0_k, vd0); always @(vd1) vd1_k = keep(vd1_k, vd1);
 	always @(vd2) vd2_k = keep(vd2_k, vd2); always @(vd3) vd3_k = keep(vd3_k, vd3);
 
+`ifdef K30
+	// k30: XA[3:0] inout (XA3 = TRI(GND, GND): never driven, the multiplexer drives it)
+	SP2_ACEX ref(.TG42(clk42), .CLKZ1(clkz_r), .\/wait (wait_w), .\/reset (res_w), .\/m1 (m1_n), .\/rf (rf_n),
+		.\/io (io_n), .\/wr (wr_n), .\/rd (rd_n), .\/mr (mr_n), .\/HALT (1'b1), .a(a), .d(d), .cs_rom(cs_rom_r),
+		.CS_CASH(cs_cash_r), .ra(ra_r), .v_cs(v_cs_r), .VA(va_r), .v_wr(v_wr_r), .VD3(vd3), .VD2(vd2), .VD1(vd1),
+		.VD0(vd0), .WR_COL(wr_col_r), .DAC_DATA(dac_data_r), .DAC_WS(dac_ws_r), .DAC_BCK(dac_bck_r), .md(md),
+		.ma(ma_r), .RAS_(ras_r), .CAS_(cas_r), .\/WE (we_r), .XACS(xacs_r), .XA({xa3, xa}), .SXA(sxa_r),
+		.RDXA(rdxa_r), .wr_awg(wr_awg_r), .RD_KMPS(rd_kmps_r), .wr_dwg(wr_dwg_r));
+	wire d_oe_r = ref.\d[0]~output .oe;
+	wire md_oe_r = ref.\md[0]~output .oe;
+	wire res_oe_r = ~ref.\/reset~output .i;          // open drain
+	wire wait_oe_r = ref.\/wait~output .oe;
+	wire cwh_r = 1'b0;                                 // no CAS_WRITE_HOLD in k30
+	localparam TB_NAME = "k30 SP2_ACEX";
+`else
 	BASE_303 ref(.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
 		.\/IO (io_n), .\/WR (wr_n), .\/RD (rd_n), .\/MR (mr_n), .\/HALT (1'b1), .A(a), .D(d), .CS_ROM(cs_rom_r),
 		.CS_CASH(cs_cash_r), .RA(ra_r), .V_CS(v_cs_r), .VA(va_r), .V_WR(v_wr_r), .VD3(vd3), .VD2(vd2), .VD1(vd1),
@@ -81,10 +97,13 @@ module tb_eq_acexm;
 	// output enables of the bidirectional pins (netlist I/O buffers)
 	wire d_oe_r = ref.\D[0]~output .oe;
 	wire md_oe_r = ref.\MD[0]~output .oe;
-	wire [3:0] vd_oe_r = {ref.\VD3[0]~output .oe, ref.\VD2[0]~output .oe, ref.\VD1[0]~output .oe, ref.\VD0[0]~output .oe};
-	wire xa_oe_r = ref.\XA[2]~output .oe;
 	wire res_oe_r = ~ref.\/RESET~output .i;          // open drain
 	wire wait_oe_r = ref.\/WAIT~output .oe;
+	wire cwh_r = ref.CAS_WRITE_HOLD.q;
+	localparam TB_NAME = "3.03a BASE_303";
+`endif
+	wire [3:0] vd_oe_r = {ref.\VD3[0]~output .oe, ref.\VD2[0]~output .oe, ref.\VD1[0]~output .oe, ref.\VD0[0]~output .oe};
+	wire xa_oe_r = ref.\XA[2]~output .oe;
 
 	// ---- ours
 	wire clkz_o, wait_oe_o, res_oe_o, cs_rom_o, cs_cash_o, wr_col_o, dac_data_o, dac_ws_o, dac_bck_o, we_o, xacs_o;
@@ -105,7 +124,7 @@ module tb_eq_acexm;
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
 		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o),
 		.CT_PH(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq),
-		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0));
+		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	// D / MD compared where the ACEX drives them (the memories answer at other times than the ideal models)
@@ -278,7 +297,7 @@ module tb_eq_acexm;
 	always @(negedge clk) if (dbg_t >= 0 && $time >= dbg_t && $time < dbg_t + 600)
 		$display("%0d ce_n=%b ct=%0d io%b rd%b mr%b m1%b wr%b d %h | ras %b cas %b md %h | o: cas %b cwh %b mcw %b mct %b mdo %h mce %b ado %h dcpp %h | r: cas %b cwh %b mdo %h dcpp %h",
 			$time, ce_n, dut.ct[2:0], io_n, rd_n, mr_n, m1_n, wr_n, d, ras_r[0], cas_r, md, dut.dc_cas, dut.cwh_q, dut.mc_write, dut.mc_type, dut.acc_mdo, dut.mc_end, dut.acc_do, dut.dcpp,
-			ref.\DECODE|CAS .q, ref.CAS_WRITE_HOLD.q,
+			ref.\DECODE|CAS .q, cwh_r,
 			ref.\ACC|MDO ,
 			{ref.\DECODE|DCPP[7] .q, ref.\DECODE|DCPP[6] .q, ref.\DECODE|DCPP[5] .q, ref.\DECODE|DCPP[4] .q,
 			 ref.\DECODE|DCPP[3] .q, ref.\DECODE|DCPP[2] .q, ref.\DECODE|DCPP[1] .q, ref.\DECODE|DCPP[0] .q});
@@ -697,7 +716,7 @@ module tb_eq_acexm;
 		end
 		idle(10);
 		ld_run = 0; repeat (40) @(posedge clk);
-		$display("tb_eq_acexm (3.03a BASE_303 vs sp_acex, scenario %0d), %0d us simulated, %0d bus cycles:", scen,
+		$display("tb_eq_acexm (%0s vs sp_acex, scenario %0d), %0d us simulated, %0d bus cycles:", TB_NAME, scen,
 			$time / 1000, n_ops);
 		clkz_report; wait_oe_report; res_oe_report; cs_report; ra_report; d_oe_report; d_pin_report; ma_report;
 		ras_cas_report; md_oe_report; md_pin_report; va_report; v_wr_report; vd_oe_report; vd_out_report;

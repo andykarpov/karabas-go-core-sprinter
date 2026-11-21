@@ -3,7 +3,7 @@
 // latches of the board on the MA bus (control word to the MAX, IDE register, INT / NMI / TURBO, TAPE_OUT), the XA
 // multiplexer, and the configuration path of the original: after every reset of the MAX the ACEX is empty, the CPU
 // runs from ROM page 0x0C on the 14 MHz clock of the MAX and pours the bitstream bit by bit (WR_CNF, D0); here the
-// stream is received, counted and hashed, and at its end the ACEX (always the translated 3.03a) is released.
+// stream is received, counted and hashed, and at its end the ACEX (the translated 3.03a, or k30 by the hash) is released.
 // Board-specific parts (PLL, pins, the MCU link, HDMI, the ROM loader) are in the board top; the peripherals not made
 // yet (the FDD data separator, RTC) are ports marked TODO. The storage controllers (IDE, WD1793 on SD images:
 // board/sp_storage.v, docs/storage.md) sit outside on the MAX strobes and the MD bus (PER_D / PER_OE).
@@ -28,9 +28,14 @@
 //   state: it holds /RESET for three CT4 periods (SOFT_RES) and the CPU starts again from 0 in the configured map. The
 //   power-up XACS pulse of the chip (its first XACS ends the load mode of the MAX) is made here: XACS low for one
 //   CE + CE_N at the release.
-// - Personality (hook): CFG_PERS = 2 (SCROLL, Thunder in the Deep) when the hash is 3861cfa4 and CSBR[3:0] = 0 (the
-//   bitstream came from fastram), as MAME; else 0 (standard 3.03a). CFG_UNKNOWN: the hash is none of the stock
-//   bitstreams (OSD message); the standard configuration runs. Only the standard one is built now.
+// - Personality: chosen at the release from a table of known MAME hashes and held until the next release (sp_acex is
+//   in CFG_RST meanwhile). The MAME hash covers only the first 512 bytes (mostly FF): different builds of one design
+//   differ in it, different designs may collide (2.16 = 2.17), so every known build is listed. 1 = k30 (BIOS 3.05 /
+//   3.06 and other k30 builds): sp_acex PERS_K30; 2 = SCROLL (Thunder in the Deep) when the hash is 3861cfa4 and
+//   CSBR[3:0] = 0 (the bitstream came from fastram), as MAME: a hook only, the 3.03a runs; else 0 (standard 3.03a).
+//   CFG_UNKNOWN: none of the table (OSD message); 3.03a runs. CFG_FNV: FNV-1a 32 over the data bus of every
+//   configuration write of the stream (CFG_BITS writes, 8 per bitstream byte), as unreal-ng (SCROLL: c0fa3055):
+//   for the log / OSD only, the selection is by the MAME table.
 module sp_machine #(
 	parameter        MIF_DCP   = "dcp.hex",
 	parameter        MIF_AY    = "ay.hex",
@@ -128,8 +133,9 @@ module sp_machine #(
 	// ---- configuration status (OSD)
 	output      [1:0] CFG_STATE,      // 0 erased (MAX /RESET), 1 loading, 2 waiting for the reloads, 3 running
 	output     [31:0] CFG_HASH,       // MAME hash of the last stream
+	output     [31:0] CFG_FNV,        // FNV-1a 32 of the whole stream (all CFG_BITS writes)
 	output     [16:0] CFG_BYTES,      // bytes received (saturates)
-	output reg  [1:0] CFG_PERS = 2'd0, // personality chosen at the release: 0 standard 3.03a, 1 k30 (TODO), 2 SCROLL
+	output reg  [1:0] CFG_PERS = 2'd0, // personality chosen at the release: 0 standard 3.03a, 1 k30, 2 SCROLL (hook)
 	output reg        CFG_UNKNOWN = 1'b0
 );
 	// ================= CE / CE_N: CE at the first edge
@@ -182,7 +188,7 @@ module sp_machine #(
 		.XA_OE(x_xaoe), .XA3(xa3), .SXA(x_sxa), .RDXA(x_rdxa), .WR_AWG(x_awg), .RD_KMPS(x_kmps), .WR_DWG(x_dwg),
 		.CT_PH(x_ct), .VA_NX(x_va_nx), .V_WR_NX(x_vwr_nx), .VA_MOD(x_va_mod), .MODE_RQ(x_mode_rq), .MLO_RQ(x_mlo_rq),
 		.VA_ATR(x_va_atr), .ATR_ZX(x_atr_zx), .PIX_RQ(x_pix_rq), .MCA(x_mca), .SEL_ROM(x_sel_rom),
-		.SEL_CASH(x_sel_cash), .CFG_RST(cfg_rst), .CFG_DONE(cfg_done));
+		.SEL_CASH(x_sel_cash), .CFG_RST(cfg_rst), .CFG_DONE(cfg_done), .PERS_K30(CFG_PERS == 2'd1));
 
 	// ================= the latches of the board on MA (DD11, DD16 and the one of HDD_C0 / FDD_C): taken at the rise
 	// of WR_AWG (MA as before the edge), cleared by the CPU /RESET line
@@ -302,11 +308,19 @@ module sp_machine #(
 	reg        kclk_p = 1'b0;
 	reg  [1:0] xp = 2'd0;
 	wire       k_rise = max_kclk & ~kclk_p;
-	// the stock bitstreams of BIOS 2.12 ... 3.04 (ROM 0x30100 / sprinter-bios/ALTERA): the standard configuration
+	// personality table (docs/machine.md 3). Standard: the stock bitstreams of BIOS 2.12 ... 3.04 (ROM 0x30100 /
+	// sprinter-bios/ALTERA) and the LDCONF streams 3.00 / 3.03 / 3.03a
 	wire       h_known = (hash == 32'h75ecdfc7) | (hash == 32'he0b976fe) | (hash == 32'hd1993271) |
 	                     (hash == 32'hce9a3671) | (hash == 32'hd0953276) | (hash == 32'hb051ab62) |
-	                     (hash == 32'h78eddfc6);
+	                     (hash == 32'h78eddfc6) | (hash == 32'hb152a961);
 	wire       h_scroll = hash == 32'h3861cfa4;
+	// k30 (upstream/tt-sprinter-bios src/altera/acex/k30): 5aa954b6 = BIOS 3.05 / 3.06 EP1K30 (ROM 187f4382, df18c931,
+	// 2d46deaf); ae54ab61 (MAME 3.05 fe1c2685), 49861031, fffc0208: other k30 builds
+	wire       h_k30 = (hash == 32'h5aa954b6) | (hash == 32'hae54ab61) | (hash == 32'h49861031) | (hash == 32'hfffc0208);
+	// FNV-1a: h = (h ^ d) * 01000193 (= 2^24 + 2^8 + 2^7 + 2^4 + 2^1 + 1), in two CLK after the write (writes are
+	// ~100 CLK apart)
+	reg [31:0] fnv = 32'h811c9dc5, fnv_x = 32'd0, fnv_s1 = 32'd0, fnv_s2 = 32'd0;
+	reg  [1:0] fnv_st = 2'd0;
 	always @(posedge CLK) begin
 		kclk_p <= max_kclk;
 		xacs_pulse <= 1'b0;
@@ -314,11 +328,13 @@ module sp_machine #(
 		if (~max_res_n) begin
 			st <= S_ERASED;
 			bits <= 32'd0; wn <= 13'd0; hash <= 32'd0; nbytes <= 17'd0;
+			fnv <= 32'h811c9dc5; fnv_st <= 2'd0;
 		end else case (st)
 			S_ERASED: st <= S_LOAD;
 			S_LOAD: begin
 				if (k_rise & max_clkzz_oe) begin
 					bits <= bits + 32'd1;
+					if (bits < CFG_BITS) begin fnv_x <= fnv ^ {24'd0, d_bus}; fnv_st <= 2'd1; end
 					if (bits[2:0] == 3'd7 & ~nbytes[16]) nbytes <= nbytes + 17'd1;
 					if (~wn[12]) begin
 						wn <= wn + 13'd1;
@@ -335,9 +351,18 @@ module sp_machine #(
 			S_WAIT: if (cfg_done & sd_rdy & ce_n) begin   // the next edge (the first of the running ACEX) is a CE
 				st <= S_ON;
 				xp <= 2'd2;
-				CFG_PERS <= (h_scroll & (csbr[3:0] == 4'd0)) ? 2'd2 : 2'd0;   // TODO: SCROLL / k30 personalities
-				CFG_UNKNOWN <= ~(h_known | h_scroll);
+				CFG_PERS <= h_k30 ? 2'd1 : (h_scroll & (csbr[3:0] == 4'd0)) ? 2'd2 : 2'd0;   // TODO: SCROLL personality
+				CFG_UNKNOWN <= ~(h_known | h_scroll | h_k30);
 			end
+			default: ;
+		endcase
+		if (max_res_n) case (fnv_st)
+			2'd1: begin
+				fnv_s1 <= fnv_x + {fnv_x[30:0], 1'b0} + {fnv_x[27:0], 4'd0};
+				fnv_s2 <= {fnv_x[24:0], 7'd0} + {fnv_x[23:0], 8'd0} + {fnv_x[7:0], 24'd0};
+				fnv_st <= 2'd2;
+			end
+			2'd2: begin fnv <= fnv_s1 + fnv_s2; fnv_st <= 2'd0; end
 			default: ;
 		endcase
 	end
@@ -345,5 +370,6 @@ module sp_machine #(
 	assign cfg_rst   = ~on;
 	assign CFG_STATE = st;
 	assign CFG_HASH  = hash;
+	assign CFG_FNV   = fnv;
 	assign CFG_BYTES = nbytes;
 endmodule

@@ -65,6 +65,18 @@
 
 `cd src && make minig` (через `job run`): XST → `ngdbuild` → `map -t 2` → `par` → `trce` → `bitgen` → `make_core.py` (`sprinter.kg`). Только Mini G.
 
+**Другой BIOS в отдельном `.kg`** (из уже собранного `karabas_minig.bin`, ISE не запускается):
+
+```
+cd src && make minig-pack ROM=$HOME/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom \
+	KG=sprinter306.kg CMOS=roms/cmos_306_mame.bin ID=sprinter306 NAME="Sprinter 3.06"
+```
+
+- `ROM` копируется в `roms/kg/<имя файла>` (в `.gitignore`), копия `core.json` с этим ROM — `roms/kg/<KG без .kg>.json`.
+- `CMOS` — начальный образ CMOS (`eeprom_init`). `ID` — отдельное ядро в меню и свой `/config/<id>.eep`: CMOS 3.04 и 3.06 различаются (`docs/rtc.md` 8.3), общий файл давал бы «CHECKSUM ERROR» при смене BIOS. `NAME` — имя в меню. Обязательны только `ROM` и `KG` (`KG` ≠ `sprinter.kg`).
+- `roms/cmos_306_mame.bin` — CMOS авторского MAME 3.06 (`mame306/nvram/sprinter_6/rtc`, 128 байт + 128 нулей): сумма `#0E..#20` совпадает с `#3F` (`F8`), A = `26`, B = `02`, C = `50`, век `20`, дата 25.06.2025. Отличия от `cmos_306.bin` (значения по умолчанию): `#0E` = `4E`, а не `4A` — бит 2 `RUS` (язык SETUP русский, `SETTINGS.asm`), и геометрия IDE в `#12..#19` (`10 10 20 00` дважды). Значения по умолчанию без IDE — `CMOS=roms/cmos_306.bin`.
+- Личность k30 для BIOS 3.05 / 3.06 есть только в битстриме, собранном после её добавления (`docs/versions.md`): сначала `make minig`, потом `minig-pack`.
+
 Сборка **26112101** (Mini G, `src/karabas_minig.bin`, `src/sprinter.kg` с BIOS 3.04 внутри; `.kg` в git не идёт — в нём ROM):
 
 | | |

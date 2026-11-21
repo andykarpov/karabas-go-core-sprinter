@@ -65,7 +65,7 @@ module sp_acexm_gate (
 		.CAS_(cas), .WE_N(we), .XACS(XACS), .XA_I(XA_I), .XA_O(XA_O), .XA_OE(XA_OE), .XA3(XA3), .SXA(SXA),
 		.RDXA(RDXA), .WR_AWG(WR_AWG), .RD_KMPS(RD_KMPS), .WR_DWG(WR_DWG), .CT_PH(ct_ph), .VA_NX(va_nx),
 		.V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx),
-		.PIX_RQ(pix_rq), .MCA(mca), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0));
+		.PIX_RQ(pix_rq), .MCA(mca), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(1'b0));
 
 	sp_sram sram(.CLK(CLK), .CE(ce), .CE_N(ce_n), .CT(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx), .VA_MOD(va_mod),
 		.MODE_RQ(mode_rq), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .VD0_O(vd0_o),

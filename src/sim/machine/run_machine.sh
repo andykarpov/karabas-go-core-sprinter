@@ -5,8 +5,9 @@
 #   the full stream: run_machine.sh verilator 473720 100 (build ~45 s + ~3 min)
 # The ROM image is local (not in git): $ROM, default ~/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.04.rom
 # (docs/roms.md 1.1: = MAME sp2k-3.04, zxgit 2000/fw/bios/sp2k-3.04.253.bin).
-# Env: ARGS="+reset" / "+p2e" (a second boot by the reset button / by the port 2E control word: must repeat the
-# first), "+scroll" (the game configuration from fastram: hash 3861cfa4, personality 2), "+trace" (every M1);
+# Env: ROM=<image>; ARGS="+reset" / "+p2e" (a second boot by the reset button / by the port 2E control word: must repeat the
+# first), "+scroll" (the game configuration from fastram: hash 3861cfa4, personality 2), "+trace" (every M1),
+# "+hash=5aa954b6 +pers=1" (the expected hash / personality: BIOS 3.06, k30; default 78eddfc6 / 0 = 3.04);
 # STOP=<us> end the run there; PROG=<us> progress interval; BUILD_ONLY=1 build only (then run the binary from here).
 set -eu
 cd "$(dirname "$0")"

@@ -90,7 +90,9 @@ module sp_video2 (
 	output     [17:1] VA_ATR,      // the ZX attribute address of this cycle (valid when ATR_ZX, from c1)
 	output            ATR_ZX,      // MODE0[4]: ZX screen (the attribute address does not depend on CT)
 	output            PIX_RQ,      // D_PIC0 takes the pixel byte at c8 of this cycle and it can be seen (from c1)
-	input             CFG_RST      // karabas: configuration reset: registers to power-up (docs/machine.md); only in if ()
+	input             CFG_RST,     // karabas: configuration reset: registers to power-up (docs/machine.md); only in if ()
+	input             PERS_K30     // karabas: personality k30 (docs/versions.md): WR_PIC.d = MODE0[5] in the mode slot
+	                               // (k30 VIDEO2.TDF:467, "fix bug with first column"), 0 = 3.03a X_MODE5
 );
 	// ================= sync counters CT / CTH / CTV / CTF
 	reg  [5:0] ct_q = 6'd0;
@@ -165,6 +167,7 @@ module sp_video2 (
 
 	reg [17:0] vla_n;
 	reg        wr_pic_d, wr_col_d, wr_mode_d;
+	wire       wr_pic_x = PERS_K30 ? mode0[5] : x_mode[5];   // WR_PIC.d of the mode slot (K30: MODE0[5])
 	always @* begin
 		wr_pic_d = 1'b1; wr_col_d = 1'b1; wr_mode_d = 1'b1;
 		case (vcm[1:0])
@@ -173,7 +176,7 @@ module sp_video2 (
 			2'd2: vla_n = vxa[17:0];
 			default: begin
 				vla_n = {DIR_PORT[3], cth_e, ct_e[5], 2'b11, ctv_e[8:3], 2'b00};
-				wr_pic_d = x_mode[5];
+				wr_pic_d = wr_pic_x;
 				wr_mode_d = ~(ct_e[5:3] == 3'b111) & ~(ct_e[4] & ct_e[3] & ~mode0[5]);
 			end
 		endcase

@@ -94,7 +94,10 @@ module sp_dcp (
 	output            HDD_DATA_NX,
 	// karabas: configuration reset (docs/machine.md): every register to its power-up value, MEM reloaded from DCP.MIF
 	// (256 CLK). Use only in if (CFG_RST).
-	input             CFG_RST
+	input             CFG_RST,
+	// karabas: personality k30 (BIOS 3.05 / 3.06, docs/versions.md): PN[7..6].clrn = /RESET & CNF7 (DCP.TDF:670 of
+	// k30), i.e. PN5 is cleared by CNF5 only and is no longer kept by Pentagon-512. 0 = 3.03a. Changes only in CFG_RST.
+	input             PERS_K30
 );
 	parameter MIF_HEX = "dcp.hex";
 	// karabas: REFRESH_REG = 1 when REFRESH is a CLK42 register switching at the same edge as RFC (in the top it is
@@ -138,7 +141,7 @@ module sp_dcp (
 	wire       sc_clr = ~RESET_N | cnf_e[6];               // SC.clrn = /RESET & !CNF6 (Scorpion off)
 	wire       pn_clr_lo = ~RESET_N | cnf_e[5];            // PN[5..0].clrn = /RESET & !CNF5
 	wire       pn_clr_hi = ~RESET_N | ~cnf_e[7];           // PN[7..5].clrn = /RESET & CNF7
-	wire       pn_clr5 = pn_clr_lo & pn_clr_hi;            // PN5 in both: the two clrn are ORed (DCP:671-672)
+	wire       pn_clr5 = pn_clr_lo & (pn_clr_hi | PERS_K30); // PN5 in both: the two clrn are ORed (DCP:671-672); K30: lo only
 	wire [7:0] sc_e = sc_clr ? 8'd0 : sc_q;
 	wire [7:0] pn_e = {pn_clr_hi ? 2'b00 : pn_q[7:6], pn_clr5 ? 1'b0 : pn_q[5], pn_clr_lo ? 5'd0 : pn_q[4:0]};
 
