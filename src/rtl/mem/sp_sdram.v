@@ -132,20 +132,27 @@ module sp_sdram #(
 						cmd <= C_REF; rcnt <= 6'd0;
 					end else if (rcnt != 6'h3F) rcnt <= rcnt + 6'd1;
 				end
-				4'd7:
+				// the column address goes out at c7 / c9 whether a command goes with it or not (a NOP ignores it): the
+				// address IOB register then does not wait for CAS_N / WE_N, which come late through the ACCELER
+				// (DOUBLE_CAS, PAR path after 0080d22)
+				4'd7: begin
+					sa <= {4'b0010, MA[8:0]};
 					if (act & ~done & WE_N & (lanes != 2'b00)) begin
-						cmd <= C_RD; sa <= {4'b0010, MA[8:0]}; dqm <= 2'b00; done <= 1'b1;
+						cmd <= C_RD; dqm <= 2'b00; done <= 1'b1;
 						rp[0] <= 1'b1; rl <= lanes;
 					end
-				4'd9:
+				end
+				4'd9: begin
+					sa <= {4'b0010, MA[8:0]};
 					if (act & ~done & (lanes != 2'b00)) begin
 						done <= 1'b1;
 						if (!WE_N) begin
-							cmd <= C_WR; sa <= {4'b0010, MA[8:0]}; dqm <= ~lanes; dq_o <= MD_O; dq_t <= 16'h0000;
+							cmd <= C_WR; dqm <= ~lanes; dq_o <= MD_O; dq_t <= 16'h0000;
 						end else begin
-							cmd <= C_RD; sa <= {4'b0010, MA[8:0]}; dqm <= 2'b00; rp[0] <= 1'b1; rl <= lanes;
+							cmd <= C_RD; dqm <= 2'b00; rp[0] <= 1'b1; rl <= lanes;
 						end
 					end
+				end
 				4'd11: begin
 					if (act & ~done) begin cmd <= C_PRE; sa <= 13'h0000; end
 					act <= 1'b0;

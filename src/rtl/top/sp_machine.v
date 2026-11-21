@@ -179,11 +179,15 @@ module sp_machine #(
 	// SDRAM command longer than one CLK (PAR, Ф1.4). One CLK later does not matter for a reset of 0.5 s.
 	reg         max_res_n = 1'b0;
 	always @(posedge CLK) max_res_n <= max_res_c;
+	// The /RESET input of the ACEX is 1: on the board the CPU /RESET line is driven only by the ACEX itself (the MAX
+	// /RESET goes to nCONFIG), and a MAX reset here erases the ACEX (CFG_RST from the next CLK, below), so while it
+	// runs the line never comes from the MAX. A max_res_n input made a PAR path max_res_n -> ACCELER reset / ACC_DIR ->
+	// sp_sdram command (12.8 ns at 84 MHz, build after 0080d22).
 	sp_acex #(.MIF_DCP(MIF_DCP), .MIF_AY(MIF_AY), .MIF_KBD(MIF_KBD)) ACEX(.CLK(CLK), .CE(ce), .CE_N(ce_n),
 		.M1_N(m1_n), .RF_N(rf_n), .IO_N(io_n), .WR_N(wr_n), .RD_N(rd_n), .MR_N(mr_n),
 		.M1_N_NX(m1_nx), .RF_N_NX(rf_nx), .IO_N_NX(io_nx), .WR_N_NX(wr_nx), .RD_N_NX(rd_nx), .MR_N_NX(mr_nx),
 		.A(a), .D_I(d_bus), .D_O(x_do), .D_OE(x_doe), .CLKZ1(x_clkz), .CLKZ1_NX(x_clkz_nx), .WAIT_N_OE(x_wait_oe),
-		.RESET_N_I(max_res_n), .RESET_N_OE(x_res_oe), .CS_ROM(x_cs_rom), .CS_CASH(x_cs_cash), .RA(x_ra),
+		.RESET_N_I(1'b1), .RESET_N_OE(x_res_oe), .CS_ROM(x_cs_rom), .CS_CASH(x_cs_cash), .RA(x_ra),
 		.V_CS(x_vcs), .VA(x_va), .V_WR(x_vwr), .VD0_I(s_vd0), .VD1_I(s_vd1), .VD2_I(s_vd2), .VD3_I(s_vd3),
 		.VD0_O(x_vd0o), .VD1_O(x_vd1o), .VD2_O(x_vd2o), .VD3_O(x_vd3o), .VD_OE(x_vdoe), .WR_COL(x_wr_col),
 		.DAC_DATA(DAC_DATA), .DAC_WS(DAC_WS), .DAC_BCK(DAC_BCK), .MD_I(md_bus), .MD_O(x_mdo), .MD_OE(x_mdoe),

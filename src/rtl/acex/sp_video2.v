@@ -61,6 +61,8 @@ module sp_video2 (
 	output            BLANK,
 	input             COPY_SINC_H, // forces CT5 = 0, CTH = 50 while high
 	input             COPY_SINC_V, // forces CTV = 290 while high
+	input             COPY_SINC_H_NX, // karabas: COPY_SINC_H / _V after this CE (the top's next values; they change only
+	input             COPY_SINC_V_NX, // at a CE): only for the registered early outputs below
 	input             WR,          // video RAM write strobe (active low): copy of a DRAM write
 	input      [19:0] VAI,         // write address: [19] = graphics, else ZX screen
 	input      [15:0] MDI,         // write data
@@ -340,48 +342,58 @@ module sp_video2 (
 	// early signals (outputs only: nothing above uses them)
 	assign VA_NX   = vla_n[17:1];
 	assign V_WR_NX = {4{mxwe_b}} | v_en_d;      // = {4{v_we_d}} | v_en_d in the write slot (vcm = 2, c11)
-	// SCROLL: the grid as the mode slot (c10) and the pixel / colour slots of this cycle will see it, as registers (no
-	// adder before the SRAM arbiter: PAR). GRID_X[2..0] is loaded at c2 (with CT[5..3]) and then held: gxl_q holds,
-	// from c0, the value it has after c2 (at the CE before CT[5..3] is enabled: the next CT[5..3] + SHIFT_X; else
-	// the next GRID_X[2..0]). GRID_X[8..3] / GRID_Y follow CTH / CT / CTV / SHIFT one CE later, and those change at
-	// c2: vmod_q = the grid after the next CE (from the next counter values), final from c3, so MODE_RQ waits for c3
-	// (no mode half in [1,3]; the slot plan still fits, docs/versions.md).
+	// ================= early outputs for sp_sram, registered (no counter / adder logic before the SRAM arbiter: PAR).
+	// sp_sram decides its slots at the CE_N edges only, so each output is a register loaded at the CE before with the
+	// value the combinational form would have at that CE_N: from the next counter values (ct_n, cth_n, ctv_n), the
+	// next CT[5..3] enable (ct_e[0] & ct_e[2]) and the next COPY_SINC_H / _V (*_NX). At the CE edges they are stale
+	// (not used there).
+	// 3.03a / k30: the cell column CT_NX[5:3] and VA_MOD = (DIR_PORT3, CTH, CT5, 11, CTV[8..3]) as seen at that CE_N.
+	// SCROLL: the grid as the mode slot (c10) and the pixel / colour slots of this cycle will see it. GRID_X[2..0] is
+	// loaded at c2 (with CT[5..3]) and then held: the column is, from c1, the value it has after c2 (at c0: the next
+	// CT[5..3] + SHIFT_X; else the next GRID_X[2..0]). GRID_X[8..3] / GRID_Y follow CTH / CT / CTV / SHIFT one CE later,
+	// and those change at c2: VA_MOD = the grid after the next CE, final from c3, so MODE_RQ waits for c3 (no mode half
+	// in [1,3]; the slot plan still fits, docs/versions.md). A sync jump in the middle of a cycle (COPY_SINC_H forces
+	// CTH = 50, CT5 = 0; COPY_SINC_V CTV = 290 at c3..c8) moves GRID_X[8..3] / GRID_Y too late for that: VA_MOD is then
+	// the grid after the jump and MODE_FIX makes sp_sram fetch both halves again.
 	wire [2:0] gxl_n = ct53_en ? gx_s[2:0] : grid_x[2:0];
 	wire [3:0] shx_n = shift_ev ? mode3[3:0] : shift_x;
 	wire [3:0] shy_n = shift_ev ? mode3[7:4] : shift_y;
 	wire [8:0] gx_n  = {cth_n, ct_n[5:3]} + {5'd0, shx_n};
 	wire [8:0] gy_n  = ctv_n + {5'd0, shy_n};
-	reg [14:0] vmod_q = 15'd0;
-	reg  [2:0] gxl_q = 3'd0;
-	// a sync jump in the middle of a cycle (COPY_SINC_H forces CTH = 50, CT5 = 0; COPY_SINC_V CTV = 290) moves GRID_X[8..3]
-	// / GRID_Y one CE later, vmod_q one CE later still: the grid after a jump, registered from the next CT[4..3] / SHIFT
-	reg  [5:0] vj_x = 6'd0, vj_y = 6'd0;
 	wire [8:0] vj_xs = {6'd50, 1'b0, ct_n[4:3]} + {5'd0, shx_n};
 	wire [8:0] vj_ys = 9'd290 + {5'd0, shy_n};
+	// the counters as seen at the next CE_N (after this CE)
+	wire       en_1   = ct_e[0] & ct_e[2];                            // ct53_en after this CE
+	wire [2:0] ce53_1 = {COPY_SINC_H_NX ? 1'b0 : ct_n[5], ct_n[4:3]};  // ct_e[5:3] then
+	wire [2:0] cn53_1 = en_1 ? ce53_1 + 3'd1 : ce53_1;
+	wire [2:0] cx_303 = {COPY_SINC_H_NX ? 1'b0 : cn53_1[2], cn53_1[1:0]};   // ct_n[5:3] then
+	wire [2:0] cx_scr = (ct_e[0] & ct_e[2]) ? ct_n[5:3] + shx_n[2:0] : gxl_n;
+	wire       jm_1   = (ct_n[2:0] == 3'd0) | (ct_n[2:0] == 3'd1) | (ct_n[2:0] == 3'd2);   // c3..c8 then
+	wire       jh_1   = PERS_SCROLL & jm_1 & COPY_SINC_H_NX, jv_1 = PERS_SCROLL & jm_1 & COPY_SINC_V_NX;
+	wire [5:0] cth_1  = COPY_SINC_H_NX ? 6'd50 : cth_n;
+	wire [8:0] ctv_1  = COPY_SINC_V_NX ? 9'h122 : ctv_n;
+	wire [14:0] vam_1 = PERS_SCROLL ? {jh_1 ? vj_xs[8:3] : gx_n[8:3], gxl_n[2], 2'b11, jv_1 ? vj_ys[8:3] : gy_n[8:3]}
+	                                : {cth_1, ce53_1[2], 2'b11, ctv_1[8:3]};
+	reg  [2:0] cx_q = 3'd0;                                           // the cell column of this cycle
+	reg [14:0] vam_q = 15'd0;                                         // VA_MOD[14:0]
+	reg        mfix_q = 1'b0;
 	always @(posedge CLK) begin
 		if (CE) begin
-			vmod_q <= {gx_n[8:3], gxl_n[2], 2'b11, gy_n[8:3]};
-			gxl_q  <= (ct_e[0] & ct_e[2]) ? ct_n[5:3] + shx_n[2:0] : gxl_n;
-			vj_x   <= vj_xs[8:3];
-			vj_y   <= vj_ys[8:3];
+			cx_q   <= PERS_SCROLL ? cx_scr : cx_303;
+			vam_q  <= vam_1;
+			mfix_q <= jh_1 | jv_1;
 		end
-		if (CFG_RST) begin vmod_q <= 15'd0; gxl_q <= 3'd0; vj_x <= 6'd0; vj_y <= 6'd0; end
+		if (CFG_RST) begin cx_q <= 3'd0; vam_q <= 15'd0; mfix_q <= 1'b0; end
 	end
-	// the jump reaches the mode slot (c10) when COPY_SINC is high at c3..c8 (CT[2..0] = 0, 1, 2); at c1..c2 vmod_q has it
-	// already, from c9 on the slot address is taken (GRID before c10)
-	wire       j_mid = PERS_SCROLL & ((ct_e[2:0] == 3'd0) | (ct_e[2:0] == 3'd1) | (ct_e[2:0] == 3'd2));
-	wire       j_h   = j_mid & COPY_SINC_H, j_v = j_mid & COPY_SINC_V;
-	wire [2:0] cx_n  = PERS_SCROLL ? gxl_q : ct_n[5:3];              // the cell column of this cycle
 	wire       m_c1  = PERS_SCROLL & (ct_e[2:0] == 3'd6);             // SCROLL: c1 (VA_MOD not final yet)
-	assign VA_MOD  = PERS_SCROLL ? {DIR_PORT[3], j_h ? vj_x : vmod_q[14:9], vmod_q[8:6], j_v ? vj_y : vmod_q[5:0]}
-	                             : {DIR_PORT[3], cth_e, ct_e[5], 2'b11, ctv_e[8:3]};
-	assign MODE_FIX = j_h | j_v;
-	assign MODE_RQ = ((cx_n == 3'd7) | ((cx_n == 3'd3) & ~mode0[5])) & ~m_c1;
-	assign MLO_RQ  = mode0[5] & (cx_n == 3'd0);
+	assign VA_MOD  = {DIR_PORT[3], vam_q};
+	assign MODE_FIX = mfix_q;
+	assign MODE_RQ = ((cx_q == 3'd7) | ((cx_q == 3'd3) & ~mode0[5])) & ~m_c1;
+	assign MLO_RQ  = mode0[5] & (cx_q == 3'd0);
 	assign VA_ATR  = {mode2[7:3], mode2[2:0], mode0[3:0], DIR_PORT[0], 3'b110, ~mode0[7]};   // [0] = ~mode0[6] dropped
 	assign ATR_ZX  = mode0[4] & ~PERS_SCROLL;                         // SCROLL: no ZX address, the colour by VA_NX
 	// the byte is also seen when a 16-colour graphics cell (no load at its cycle 4 for a next cell with MODE0[5] = 1)
 	// is followed by a ZX / text half-cell: D_PIC0 is not reloaded there and shifts the byte of cycle 0 out
-	assign PIX_RQ  = (mode0[5] ? (cx_n == 3'd0) : (cx_n[1:0] == 2'd0)) &
-	                 (mode0[4] | x_mode[4] | (~mode0[5] & (cx_n == 3'd0)));
+	assign PIX_RQ  = (mode0[5] ? (cx_q == 3'd0) : (cx_q[1:0] == 2'd0)) &
+	                 (mode0[4] | x_mode[4] | (~mode0[5] & (cx_q == 3'd0)));
 endmodule

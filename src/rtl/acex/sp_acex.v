@@ -655,7 +655,7 @@ module sp_acex (
 
 	// ================= submodules
 	sp_video2 SVIDEO(.CLK(CLK), .CE(CE), .CE_N(CE_N), .CT(ct), .CTH(cth), .CTV(ctv), .CTF(ctf), .BLANK(v_blank),
-		.COPY_SINC_H(copyh_q), .COPY_SINC_V(copyv_q), .WR(svwr_e), .VAI({ga, acc_ao[9:0]}), .MDI(acc_mdo),
+		.COPY_SINC_H(copyh_q), .COPY_SINC_V(copyv_q), .COPY_SINC_H_NX(copyh_d), .COPY_SINC_V_NX(copyv_d), .WR(svwr_e), .VAI({ga, acc_ao[9:0]}), .MDI(acc_mdo),
 		.DOUBLE_CAS(dcas), .VAO(vao), .VDO0(vdo0), .VDO1(vdo1), .VDO2(vdo2), .VDO3(vdo3),
 		.VDM0(vd0), .VDM1(vd1), .VDM2(vd2), .VDM3(vd3), .V_WR(v_wr), .V_WEN(v_wen), .V_CS(v_cs), .WR_PIX(wr_pix),
 		.ZX_PORT({sp_sa, zx_wen, acc_gline[5:0]}),

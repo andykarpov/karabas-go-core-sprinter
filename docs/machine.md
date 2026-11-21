@@ -8,7 +8,7 @@
 |---|---|---|
 | Z84C15 | `sp_z84c15` (T80pa + SIO / CTC0 / PIO / SCRP) | такт `CLKZ1` + `CLKZ1_NX` (меняется только по `CE_N`, см. п. 2); `TRG0` = `AUD` (CT3) MAX, как на схеме (CLK/TRG0-2) |
 | ACEX 3.03a / k30 / SCROLL | `sp_acex` | `CFG_RST` / `CFG_DONE` (п. 4), `PERS_K30`, `PERS_SCROLL` (п. 3) |
-| MAX | `sp_max` | `/RESET` → `CONF_X_N` (в `sp_machine` через регистр, Ф1.4: путь для PAR), `CLKZZ`, `10K_CLK` / `10K_D0` |
+| MAX | `sp_max` | `/RESET` → `CONF_X_N` (в `sp_machine` через регистр, Ф1.4: путь для PAR), `CLKZZ`, `10K_CLK` / `10K_D0`; вход `RESET_N_I` ACEX = 1 (линию `/RESET` ведёт только ACEX, сброс MAX его стирает: `CFG_RST`) |
 | видео-ОЗУ, ROM, fastram, тень палитры | `sp_sram` | порт загрузчика ROM (`LD_*`) — наружу, к верху платы |
 | DRAM | `sp_sdram` | |
 | защёлки на `MA` (DD11, DD16 и третья для `HDD_C0` / `FDD_C`) | в `sp_machine` | по подъёму `WR_AWG` берут `MA[14..2]` и `XA[2..0]`; сброс — линия `/RESET` ЦПУ. Выходы: `HDD_C`, `FDD_C` (к MAX), `HD_A`, INT (`MA13`), NMI (`MA12`), `!TURBO` (`MA14`), `TAPE_OUT` (`XA2`) |
