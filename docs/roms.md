@@ -173,3 +173,11 @@ print('%08x' % (zlib.crc32(d) & 0xffffffff))
 - Хеш конфигурации ACEX (как MAME: первые 4096 записей = 512 байт с `0x30100`): 3.05 и 3.06 EP1K30 — `383a0f9f` (k30; потоки различаются в 102 байтах за хешируемым участком), 3.06 EP1K50 — `8cd33f23` (конфигурация под EP1K50, другой кристалл; пока не нужна).
 - Архивы `~/Downloads/Telegram Desktop/`: `SPRINTER.7z` / `SPRINTER_archive.zip` — одно дерево системного диска (DOCS, DEV, DEMOS, UTILS, GAMES, MEDIA, ZX, TRD, DSS, TESTS, FN, BIN, MODEM, C, TITD); `SPRINTER_v2.7z` — новее: `SYSTEM.DOS` 25.06.2025 (DSS 1.7x, под BIOS 3.06), без TITD. Из `SPRINTER_v2` собирать образ HDD FAT16 для проверки 3.06.
 
+### Авторский MAME 3.06 (`mame_release_v306_25.05.2025.rar`, от пользователя 2026-11-21)
+
+Распаковано нужное в `~/Downloads/karabas-sd-sprinter/mame306/` (сам `mame.exe` — Windows, не нужен):
+- `roms/sprinter.zip` — **полный набор BIOS MAME**, все 7 CRC совпадают с `sprinter.cpp`, в том числе **3.05 `fe1c2685`** (→ `roms/mame-named/sp2k-3.05.rom`); 3.05 из Telegram `2d46deaf` — другая сборка.
+- `roms/sprinter/_SPRIN.BIN` — ещё одна сборка 3.06 (`df18c931`, SETUP 1.60, хеш конфигурации `383a0f9f`).
+- `IMG/sp_hdd_sys.chd` (96 МБ) — системный HDD автора под 3.06 (нужен `chdman extracthd` → сырой образ для SD); `IMG/dss171u.img` — загрузочная дискета DSS 1.71; `nvram/sprinter_6/rtc` — CMOS (128 байт) автора под 3.06; `_306.bat` — запуск: дисковод 0 5.25" QD, 1 — 3.5" HD (дискета DSS во 2-м), HDD1 sys, HDD2 media, CD на втором канале, NeoGS на ISA.
+- Официальный релиз 3.06 (`spdx_release_v306_25.05.2025`): `hdd/system.zip` (DSS 3.06, 666 файлов, без `BOOT.EXE`), `firmware/` (ROM EP1K30/50, `.pof` MAX EPM7064 / EPM7128, `UP306.EXE`), `docs/sp-dx-sch.pdf`; hotfix1 — `UP306F1.EXE` (BIOS внутри).
+
