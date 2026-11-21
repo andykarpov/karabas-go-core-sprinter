@@ -9,7 +9,7 @@
     "rtc_mode": 0,
     "roms": [
         {
-            "filename": "roms/kg/sp2k-3.06-hf2.rom",
+            "filename": "roms/sp2k-3.06-hf2.rom",
             "address": 0
         }
     ],

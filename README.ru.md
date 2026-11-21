@@ -46,7 +46,7 @@ PetersPlus Sprinter Sp2000 (Z84C15 на 21 МГц, Altera ACEX + MAX, 4 МБ О�
 
 ## Сборка
 
-`cd src && make minig` (или `go`, `mini`), ISE 14.7; образа BIOS в git нет (`docs/roms.md`, `docs/minig.md`). Симуляция: `src/sim/eq/run_eq.sh` (эквивалентность с сетевыми списками Quartus из AHDL оригинала), `src/sim/machine/run_machine.sh`.
+`cd src && make minig` (или `go`, `mini`), ISE 14.7; образ BIOS — `src/roms/sp2k-3.06-hf2.rom`. Симуляция: `src/sim/eq/run_eq.sh` (эквивалентность с сетевыми списками Quartus из AHDL оригинала), `src/sim/machine/run_machine.sh`.
 
 ## Источники
 

@@ -16,8 +16,7 @@
 # Inputs per board: karabas_<board>.prj (the source list, the shared modules as "../modules/rtl/..."), .xst,
 # .ucf, .ut. A step runs again when one of its inputs is newer than its output.
 #
-# The BIOS ROM is not in git (docs/roms.md): the .kg takes roms/kg/sp2k-3.06.rom, copied from $(ROM) at pack time
-# (default: the local image of the MAME set, docs/roms.md 1.1).
+# The BIOS ROM of the .kg is src/roms/sp2k-3.06-hf2.rom (in git, docs/roms.md).
 
 ISE_SETTINGS ?= /opt/Xilinx/14.7/ISE_DS/settings64.sh
 SHELL = /bin/bash
@@ -32,8 +31,8 @@ CMOS ?=
 ID ?=
 NAME ?=
 JSON = core.json
-ROM ?= $(HOME)/Downloads/karabas-sd-sprinter/roms/unreal-ng-2026-11-21/sp2k-3.06-hf2.rom
-ROM_KG = roms/kg/sp2k-3.06-hf2.rom
+# the BIOS of the .kg (in git): BIOS 3.06 Hotfix 2 (docs/roms.md); ROM= only for minig-pack
+ROM_KG = roms/sp2k-3.06-hf2.rom
 # map / par as core-p4096; cost table 2 first (karabas-go-notes map-cost-table-2-first); -mt 2: the PC is shared
 MAP_T_go = 2
 MAP_T_mini = 2
@@ -45,11 +44,6 @@ INCLUDES = $(wildcard ../modules/rtl/mcu/*.vh) $(wildcard rtl/acex/mif/*.hex)
 .PHONY: all clean $(BOARDS) $(BOARDS:=-xst) $(BOARDS:=-impl) $(BOARDS:=-core) $(BOARDS:=-report) $(BOARDS:=-pack)
 
 all: minig
-
-$(ROM_KG):
-	@[ -s "$(ROM)" ] || { echo "no BIOS image $(ROM) (docs/roms.md 1.1; set ROM=...)"; exit 1; }
-	mkdir -p roms/kg
-	cp "$(ROM)" $@
 
 define board
 SRC_$(1) := $$(shell sed -n 's/^[a-z]* work "\(.*\)"/\1/p' karabas_$(1).prj)

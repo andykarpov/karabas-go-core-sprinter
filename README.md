@@ -46,7 +46,7 @@ Not done: the secondary IDE channel, tape, ISA, the physical floppy drive of the
 
 ## Build
 
-`cd src && make minig` (or `go`, `mini`), ISE 14.7; the BIOS image is not in git (`docs/roms.md`, `docs/minig.md`). Simulation: `src/sim/eq/run_eq.sh` (equivalence with the Quartus netlists of the original AHDL), `src/sim/machine/run_machine.sh`.
+`cd src && make minig` (or `go`, `mini`), ISE 14.7; the BIOS image is `src/roms/sp2k-3.06-hf2.rom`. Simulation: `src/sim/eq/run_eq.sh` (equivalence with the Quartus netlists of the original AHDL), `src/sim/machine/run_machine.sh`.
 
 ## Sources
 
