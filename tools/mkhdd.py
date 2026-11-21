@@ -5,7 +5,8 @@ What BIOS 3.04 and the DSS boot loader need (docs/storage.md, section 4a):
 - absolute sectors 1..3 (LBA 1..3, after the MBR): the DSS loader (#600 bytes, starts with "Starting...\\0").
   The BIOS reads LBA 1, compares "Starting...\\0" and jumps into it; without it: "Start from Hard disk...fail".
   The loader is the tail of DSS BOOT.EXE (= what "BOOT C:" writes) or sectors 1..3 of a DSS boot floppy / disk;
-- MBR partition entry 0 (the loader looks at entry 0 only), type 01 / 04 / 06 / 0E, its LBA start and size;
+- MBR partition entry 0 (the loader looks at entry 0 only), active (0x80: the DSS 1.7x loader needs it), type
+  01 / 04 / 06 / 0E, its LBA start and size;
 - FAT16 (or FAT12) with 512-byte sectors, media F8, "FAT16" at #36 of the boot sector;
 - SYSTEM.DOS in the root (the loader reads it), SYSTEM.EXE in the root (the shell DSS starts).
 
@@ -102,7 +103,8 @@ def main():
     p += bytes(psize * SEC - len(p))        # mkfs.fat counts 1 KB blocks: an odd last sector stays outside FAT
 
     mbr = bytearray(SEC)
-    e = bytes([0x00]) + chs(PART_LBA) + bytes([0x06]) + chs(total - 1) + \
+    # active (0x80): the DSS 1.7x loader (BIOS 3.05 / 3.06) says "Unknown partition table" without it
+    e = bytes([0x80]) + chs(PART_LBA) + bytes([0x06]) + chs(total - 1) + \
         PART_LBA.to_bytes(4, "little") + psize.to_bytes(4, "little")
     mbr[0x1BE:0x1CE] = e
     mbr[0x1B8:0x1BC] = os.urandom(4)        # disk signature
