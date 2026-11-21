@@ -97,6 +97,14 @@ main	di
 	PT1	#02c, #2a
 	ld	a,#2b
 	PT1	#03c, #2b
+	; the accelerator part (docs/memtiming.md 8): ALL_MODE (C3) at #204E, read of #204E = code 00 (nobody drives D),
+	; the line port (C4) at #89, window 1 (E9) at #A2
+	ld	a,#c3
+	PT1	#056, #c3
+	xor	a
+	PT1	RD | #056, #00
+	PTA	#009, #c4
+	PTA	#02a, #e9
 	; the first IN ends STARTING (the descriptors are used from now on)
 	xor	a
 	in	a,(#03)
@@ -318,7 +326,41 @@ main	di
 	LOGA
 	inc	hl
 	djnz	.ra3
-.end	MARK	#ff
+.end	MARK	#30
+	; ================= an undriven data bus (pull-ups D0..D7) and the accelerator, as BIOS 3.04 does around its
+	; ZX screen output (IN of ALL_MODE, AND #FE, OUT, then the saved value back) before Flex Navigator draws with
+	; the vertical fill: the IN must give FF, else the restore turns the accelerator off (docs/memtiming.md 8)
+	ld	bc,#204e
+	in	a,(c)
+	LOGA				; FF
+	ld	e,a
+	and	#fe
+	out	(c),a
+	ld	a,e
+	out	(c),a			; ALL_MODE = the value read: FF, accelerator on
+	ld	a,#50
+	out	(#a2),a			; window 1 = graphics page 50
+	ld	hl,#8100
+	ld	a,8
+	ld	d,d			; the counter: 8
+	ld	(hl),a
+	ld	b,b
+	ld	a,#20
+	out	(#89),a			; line 20
+	ld	hl,#4000
+	ld	a,#5a
+	ld	e,e			; vertical fill: 4000 on lines 20..27 = 5A
+	ld	(hl),a
+	ld	b,b
+	ld	d,#20
+.vl	ld	a,d
+	out	(#89),a
+	ld	a,(#4000)
+	LOGA				; 5A x 8
+	inc	d
+	bit	3,d
+	jr	z,.vl
+	MARK	#ff
 	halt
 
 ; read one sector: D track, E the system register for it (drive, side), A sector; returns to IX. Logs the status of the seek, the byte count, the

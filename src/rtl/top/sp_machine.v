@@ -240,10 +240,15 @@ module sp_machine #(
 	assign z_wait_n = (on ? ~x_wait_oe : 1'b1) & s_wait_n;
 
 	// ================= data buses (the line keeps its last value when nobody drives: the bus capacitance the ACEX
-	// relies on at a strobe edge, docs of sp_acex)
+	// relies on at a strobe edge, docs of sp_acex). D0..D7 have pull-ups on the board (docs/machine.md 2): a CPU read
+	// (/RD low) or INTA that nobody drives gives FF, as in MAME. BIOS 3.04 reads ALL_MODE back by IN #204E (code 00:
+	// the ACEX does not drive D), clears bit 0 around its ZX screen output and writes the value read back: with the
+	// last bus value (the opcode 78 of IN A,(C)) the accelerator went off and Flex Navigator drew one line of each
+	// vertical fill / glyph (docs/memtiming.md 8).
 	wire mem_rd = on ? ((~x_cs_rom | (~x_cs_cash & (x_ra[17:16] == 2'b01))) & ~rd_n) : ((u_rom | u_fast) & ~rd_n);
+	wire d_pull = ~rd_n | (~m1_n & ~io_n);
 	reg  [7:0] d_keep = 8'hFF;
-	assign d_bus = cpu_doe ? cpu_do : (on & x_doe) ? x_do : mem_rd ? s_q : d_keep;
+	assign d_bus = cpu_doe ? cpu_do : (on & x_doe) ? x_do : mem_rd ? s_q : d_pull ? 8'hFF : d_keep;
 	always @(posedge CLK) d_keep <= d_bus;
 	wire [15:0] sd_q; wire [1:0] sd_drv;
 	reg  [15:0] md_keep = 16'hFFFF;

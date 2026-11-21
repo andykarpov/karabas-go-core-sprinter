@@ -368,6 +368,17 @@ module tb_storage;
 			$display("  Read Address: C %0d H %0d R %0d N %0d", lg[p], lg[p + 1], lg[p + 2], lg[p + 3]);
 			if (lg[p] != 79 || lg[p + 3] != 2) begin $display("ERROR: Read Address ID"); errors = errors + 1; end
 		end
+		// the undriven bus read (FF: pull-ups D0..D7) and the accelerator vertical fill after the ALL_MODE restore
+		p = at(8'h30);
+		if (p < 0) begin $display("ERROR: no accelerator part"); errors = errors + 1; end
+		else begin
+			$display("  IN of #204E (code 00, nobody drives D): %h; vertical fill lines 20..27: %h %h %h %h %h %h %h %h",
+				lg[p], lg[p + 1], lg[p + 2], lg[p + 3], lg[p + 4], lg[p + 5], lg[p + 6], lg[p + 7], lg[p + 8]);
+			if (lg[p] !== 8'hFF) begin $display("ERROR: undriven data bus not FF"); errors = errors + 1; end
+			for (k = 1; k <= 8; k = k + 1) if (lg[p + k] !== 8'h5A) begin
+				$display("ERROR: vertical fill line %h: %h", 8'h1F + k, lg[p + k]); errors = errors + 1;
+			end
+		end
 		$display("tb_storage: %0d errors (%0.2f ms)", errors, $realtime / 1.0e6);
 		$finish;
 		end

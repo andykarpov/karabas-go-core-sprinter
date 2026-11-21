@@ -9,7 +9,8 @@
 // the log port 2001 against the list below, the bus shape of the CPU (src/sim/cpu/z80_bus_chk.vh), X on buses.
 // +scen=0: internal ports through the bus, pages; +scen=1: IM 1 / IM 2 on keyboard interrupts (PS/2 frames,
 // ALL_MODE0 = 1, SINC_1 pulses as scenario 2 of tb_eq_acex); +scen=2: accelerator fill / copy, 3.5 MHz and back;
-// +scen=3: video RAM writes (ZX, graphics, palette bytes, page 54) and the fastram (writes, code run from the cache).
+// +scen=3: video RAM writes (ZX, graphics, palette bytes, page 54) and the fastram (writes, code run from the cache);
+// +scen=4: the vertical accelerator modes (fill, glyph copy) on page 50 from DRAM as Flex Navigator draws.
 `timescale 1ns/1ps
 `include "eq_cmp.vh"
 module tb_cpu_acex;
@@ -113,8 +114,9 @@ module tb_cpu_acex;
 		if (cas_p == 4'hF && cas_r !== 4'hF && ras_r[0] === 1'b0) col <= ma_r[11:0];
 		ras_p <= ras_r[0]; cas_p <= cas_r;
 	end
-	wire cpu_mw = ~mr_n & ~wr_n;                      // a CPU memory write: the DRAM does not drive MD
-	wire dr_rd = ras_cyc & ~ras_r[0] & we_r & ~cpu_mw;
+	// the DRAM drives MD in every read cycle the reference does not drive MD itself, also in a CPU write the ACEX
+	// blocked (WE_N high), as the original DRAM and sp_sdram do (as tb_cpu_acexm)
+	wire dr_rd = ras_cyc & ~ras_r[0] & we_r & ~md_oe_r;
 	// an unwritten byte: random, in page 0x40 (column 0x40, the port table) a random descriptor of the pick list
 	reg [7:0] pick [0:31];
 	function [7:0] ddef(input [21:0] i); begin
@@ -128,10 +130,12 @@ module tb_cpu_acex;
 	assign #3 md[15:8] = (dr_rd & ~cas_r[1]) ? dq1 : (dr_rd & ~cas_r[3]) ? dq3 : 8'bz;
 	integer n_dwr = 0, n_drd = 0, n_rf = 0;
 	always @(negedge clk) if (ras_cyc && ras_r[0] === 1'b0 && we_r === 1'b0) begin
-		if (cas_r[0] === 1'b0) dram[didx(1'b0, 1'b0, row, col)] <= md[7:0];
-		if (cas_r[1] === 1'b0) dram[didx(1'b0, 1'b1, row, col)] <= md[15:8];
-		if (cas_r[2] === 1'b0) dram[didx(1'b1, 1'b0, row, col)] <= md[7:0];
-		if (cas_r[3] === 1'b0) dram[didx(1'b1, 1'b1, row, col)] <= md[15:8];
+		// a lane is written only from the sample after its CAS_ fall, when col holds the column (as tb_cpu_acexm;
+		// writing at the fall itself also wrote the previous column: a wrong glyph in scenario 4)
+		if (cas_r[0] === 1'b0 && cas_p[0] === 1'b0) dram[didx(1'b0, 1'b0, row, col)] <= md[7:0];
+		if (cas_r[1] === 1'b0 && cas_p[1] === 1'b0) dram[didx(1'b0, 1'b1, row, col)] <= md[15:8];
+		if (cas_r[2] === 1'b0 && cas_p[2] === 1'b0) dram[didx(1'b1, 1'b0, row, col)] <= md[7:0];
+		if (cas_r[3] === 1'b0 && cas_p[3] === 1'b0) dram[didx(1'b1, 1'b1, row, col)] <= md[15:8];
 	end
 	reg we_p = 1;
 	always @(negedge clk) begin
@@ -412,6 +416,7 @@ module tb_cpu_acex;
 		for (i = 16'h0010; i < 16'h0018; i = i + 1) begin dset(i, 0, 8'h00); dset(i, 1, 8'h00); end
 		dset(16'hFFEE, 0, 8'h00); dset(16'hFFEE, 1, 8'h00); dset(16'hFFEF, 0, 8'h00); dset(16'hFFEF, 1, 8'h00);
 		dset(16'h2001, 0, 8'h00); dset(16'h2002, 0, 8'h00);
+		dset(16'h2089, 0, 8'hC4);                    // OUT (89),A with A = 20..3F: the line port (scenario 4)
 		// the program in every ROM page, the scenario at 3FFF
 		for (i = 0; i < 16384; i = i + 1) prog[i] = 8'h00;
 		$readmemh("build/cpu_acex.hex", prog);
@@ -429,6 +434,10 @@ module tb_cpu_acex;
 			// routine, INC (HL), the three self-modifying cases, the loop; the ROM byte under smc2; the end
 			e(8'hF6); e(8'h8D); e(8'h06); e(8'hDC); e(8'h78); e(8'h56); e(8'h78); e(8'h12); e(8'h56); e(8'hC5);
 			e(8'h54); e(8'hA7); e(8'h3D); e(8'h5B); e(8'h6A); e(8'h00); e(8'hE3);
+		end else if (scen == 4) begin
+			// vertical accelerator modes on page 50 run from DRAM as Flex Navigator: fill sum of a column, glyph sum
+			// of a column, the last lines of the two glyph columns, the last line of the last fill column
+			e(8'hA4); e(8'hD0); e(8'hFF); e(8'h80); e(8'h01); e(8'h5A); e(8'hE4);
 		end else begin
 			e(8'hA0); e(8'h38); e(8'h01); e(8'hA1); e(8'h22); e(8'h02); e(8'hE1);
 			sinc_lo = 2 * 96;
@@ -442,7 +451,7 @@ module tb_cpu_acex;
 		res_drv = 1;
 		while (res_w !== 1'b1) @(posedge clk);
 		$display("  /RESET released at %0d ns", $time);
-		t_end = $time + 400000;
+		t_end = $time + (scen == 4 ? 650000 : 400000);
 		while (!done && $time < t_end) @(posedge clk);
 		repeat (200) @(posedge clk);
 		$display("tb_cpu_acex (sp_z84c15 on BASE_303 and sp_acex, scenario %0d), %0d us simulated%0s:", scen,

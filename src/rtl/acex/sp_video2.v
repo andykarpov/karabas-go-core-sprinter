@@ -294,5 +294,8 @@ module sp_video2 (
 	assign MLO_RQ  = mode0[5] & (ct_n[5:3] == 3'd0);
 	assign VA_ATR  = {mode2[7:3], mode2[2:0], mode0[3:0], DIR_PORT[0], 3'b110, ~mode0[7]};   // [0] = ~mode0[6] dropped
 	assign ATR_ZX  = mode0[4];
-	assign PIX_RQ  = (mode0[5] ? (ct_n[5:3] == 3'd0) : (ct_n[4:3] == 2'd0)) & (mode0[4] | x_mode[4]);
+	// the byte is also seen when a 16-colour graphics cell (no load at its cycle 4 for a next cell with MODE0[5] = 1)
+	// is followed by a ZX / text half-cell: D_PIC0 is not reloaded there and shifts the byte of cycle 0 out
+	assign PIX_RQ  = (mode0[5] ? (ct_n[5:3] == 3'd0) : (ct_n[4:3] == 2'd0)) &
+	                 (mode0[4] | x_mode[4] | (~mode0[5] & (ct_n[5:3] == 3'd0)));
 endmodule

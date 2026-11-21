@@ -160,9 +160,11 @@
 				end
 			end
 			// D_PIC0 / DCOL take the byte DFF(VLA[1:0]) of D_PICx_ (the bus at the last CE_N)
-			// (a D_PIC0 load is checked only when D_PIC0 can be seen: ZX now or in the last slot, MODE0[4] | X_MODE4;
+			// (a D_PIC0 load is checked only when D_PIC0 can be seen: ZX now or in the last slot, MODE0[4] | X_MODE4, or
+			// cycle 0 of 16-colour graphics (a ZX / text half-cell with MODE0[5] may follow, docs/memtiming.md 8.3);
 			// otherwise sp_sram does not fetch it, by design: PIX_RQ)
-			if (ce && !dut.SVIDEO.lwr_pic && dut.SVIDEO.ld_pic && !(dut.SVIDEO.mode0[4] | dut.SVIDEO.x_mode[4])) n_dps = n_dps + 1;
+			if (ce && !dut.SVIDEO.lwr_pic && dut.SVIDEO.ld_pic && !(dut.SVIDEO.mode0[4] | dut.SVIDEO.x_mode[4]) &&
+			    !(!dut.SVIDEO.mode0[5] && dut.SVIDEO.ct_e[5:3] == 3'd0)) n_dps = n_dps + 1;
 			else if (ce && ((!dut.SVIDEO.lwr_pic && dut.SVIDEO.ld_pic) || (!dut.SVIDEO.lwr_col && !dut.SVIDEO.blank && !dut.SVIDEO.bordp))) begin
 				n_dp = n_dp + 1;
 				if (dut.SVIDEO.dpicx !== rdp[8 * dut.SVIDEO.vla_d +: 8]) begin

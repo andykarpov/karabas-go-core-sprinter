@@ -1,7 +1,7 @@
 #!/bin/sh
 # The three blocks together: tb_cpu_acexm runs cpu_acex.asm on sp_z84c15, which drives the BASE_303 netlist (ideal
-# memories) and sp_acex on its own memory (sp_sram + IS61 models, sp_sdram + MT48 model, mem/); four scenarios in
-# parallel (about 2-3 minutes; SCEN="3" for a subset). Debug: vvp -n build/tb_cpu_acexm.vvp +scen=N [+stop] [+dbg=<ns>] [+cpuref]
+# memories) and sp_acex on its own memory (sp_sram + IS61 models, sp_sdram + MT48 model, mem/); five scenarios in
+# parallel (scenario 4: the vertical accelerator modes from DRAM as Flex Navigator; about 2-4 minutes; SCEN="3" for a subset). Debug: vvp -n build/tb_cpu_acexm.vvp +scen=N [+stop] [+dbg=<ns>] [+cpuref]
 set -eu
 cd "$(dirname "$0")"
 S=${QUARTUS_SIM_LIB:-/opt/altera/quartus/eda/sim_lib}
@@ -21,6 +21,6 @@ iverilog -g2005 -I. -o build/$T.vvp -s tb_cpu_acexm tb_cpu_acexm.v "$VO" $A/sp_a
 	../cpu/build/t80pa.v "$MEMRTL" $M/sp_sdram.v mem/sram_is61.v mem/sdram_mt48.v mem/oddr2.v \
 	"$S/cycloneive_atoms.v" "$S/altera_primitives.v" 2>build/$T.log \
 	|| { grep -v 'coerced\|sorry: procedural continuous' build/$T.log; exit 1; }
-SCEN=${SCEN:-0 1 2 3}
-for s in $SCEN; do vvp -n build/$T.vvp +scen=$s > build/${T}_$s.txt 2>&1 & done; wait
+SCEN=${SCEN:-0 1 2 3 4}
+for s in $SCEN; do vvp -n build/$T.vvp +scen=$s ${VVPARGS:-} > build/${T}_$s.txt 2>&1 & done; wait
 for s in $SCEN; do echo "scenario $s:"; grep -v '\$finish\|readmemh' build/${T}_$s.txt; done
