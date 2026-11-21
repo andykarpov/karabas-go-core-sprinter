@@ -42,7 +42,11 @@ module tb_eq_video2;
 		.COPY_SINC_H(csh), .COPY_SINC_V(csv), .WR(wr), .VAI(vai), .MDI(mdi), .DOUBLE_CAS(dbl), .VAO(vao_o),
 		.VDO0(vdo0_o), .VDO1(vdo1_o), .VDO2(vdo2_o), .VDO3(vdo3_o), .VDM0(vdm0), .VDM1(vdm1), .VDM2(vdm2), .VDM3(vdm3),
 		.V_WR(vwr_o), .V_WEN(vwen_o), .V_CS(vcs_o), .WR_PIX(wrpix_o), .ZX_PORT(zx_port), .DIR_PORT(dir_port),
-		.INTT(intt_o));
+		.INTT(intt_o), .PERS_K30(`PERS_K30_V));
+
+	// -DK30 +mut: the k30 WR_PIC data forced back to 3.03a X_MODE5 (must fail)
+	wire m_wrpic = dut.x_mode[5];                    // a plain net: iverilog evaluates another force RHS once
+	initial if ($test$plusargs("mut")) #1 force dut.wr_pic_x = m_wrpic;
 
 	// ---- video RAM: 64 K x 32 bits (V_CS1 = 1, V_CS0 = 0 constantly: one bank)
 	reg [7:0] ram [0:262143];
@@ -215,7 +219,7 @@ module tb_eq_video2;
 			if (seg < 4) cycles(3 * 2688 - 500);
 			$display("  segment %0d done: ctv %0d ctf %0d writes %0d", seg, ctv_r, ctf_r, nwr);
 		end
-		$display("tb_eq_video2 (3.03a VIDEO2 vs sp_video2):");
+		$display("tb_eq_video2 (%0s VIDEO2 vs sp_video2%0s):", `PERS_NAME, $test$plusargs("mut") ? ", mutation WR_PIC" : "");
 		ct_report; cth_report; ctv_report; ctf_report; blank_report; intt_report; vao_report; vdo_report;
 		v_wr_report; v_wen_report; v_cs_report; wr_pix_report;
 		$display("tb_eq_video2: %0d errors%s", errors, weak ? " (some outputs never toggled)" : "");

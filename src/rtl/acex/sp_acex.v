@@ -48,6 +48,16 @@
 //   comes only from /RESET changing (CBL_WR through DFF(MC_WRITE | CAS) preset) is not clocked by that change.
 // - ACC_DIR1 in the clear of the page-FD register (CBL_WR, TDF:1141) is taken as is (its next value is not computed):
 //   it changes only at the end of an M1 cycle, when that term cannot fall.
+//
+// karabas: personality k30 (PERS_K30 = 1): the configuration of BIOS 3.05 / 3.06 (upstream/tt-sprinter-bios @ 085ef3c
+// src/altera/acex/k30, SP2_ACEX.TDF; docs/versions.md). k30 is the author's 2.18 with its own changes and without the
+// 3.00-3.03 ones; the lines that differ are muxed here ("K30:" in the comments), PERS_K30 = 0 is 3.03a bit for bit:
+//   /RESET      Ctrl+Alt+Del not gated by ALL_MODE5            KEYS.ena      VCC (ZX matrix always)
+//   KEYS.int_ena ALL_MODE0 & ALL_MODE3                         NMI_X         GND (NMI_ON = "OFF")
+//   CAS_A       DECODE.CAS (no write hold)                    BLK_MR        combinational (LCELL)
+//   /WE         DFFE(/WE_OUT | DECODE.RAS, CLK42, , /RESET)   DIR_PORT[4]   GND (SCREEN_OFF = "NOT_USE": no blanking)
+//   DCP: PN5 not set by CNF7 (PN[7..6].clrn); VIDEO2: WR_PIC.d = MODE0[5] in the mode slot.
+// PERS_K30 must change only while CFG_RST is high (the personality is chosen at a configuration load).
 module sp_acex (
 	input             CLK,
 	input             CE,           // CLK42 rising
@@ -135,7 +145,8 @@ module sp_acex (
 	// CFG_DONE = the reloads have finished (CFG_RST high for at least 260 CLK). Release CFG_RST so that the next edge
 	// is a CE (as at power-up). Use only in if (CFG_RST): an unconnected port (old testbenches) reads as off.
 	input             CFG_RST,
-	output reg        CFG_DONE = 1'b0
+	output reg        CFG_DONE = 1'b0,
+	input             PERS_K30      // karabas: 1 = the k30 configuration (BIOS 3.05 / 3.06), 0 = 3.03a; see above
 );
 	parameter MIF_DCP = "dcp.hex";
 	parameter MIF_AY  = "ay.hex";
@@ -200,7 +211,8 @@ module sp_acex (
 	reg        dos_q = 1'b1;                 // prn = /RESET
 	reg        cwh_q = 1'b0;                 // CAS_WRITE_HOLD
 	reg        dw_q = 1'b0;                  // DRAM_WRITE (!CLK42)
-	reg        blk_mr = 1'b0;
+	reg        blk_mr_q = 1'b0;              // BLK_MR (3.03a: DFF on CLK42)
+	reg        we_q = 1'b1;                  // K30: /WE = DFFE(/WE_OUT or DECODE.RAS, CLK42, , /RESET): prn
 	reg  [7:0] rgmod = 8'd0; reg rgmod_en = 1'b0;
 	reg        svwr_q = 1'b1;                // SVIDEO.wr (!CLK42), prn = /RESET
 	reg  [7:0] all_mode = 8'hFF; reg am_en = 1'b0;
@@ -265,6 +277,7 @@ module sp_acex (
 
 	// ================= effective values of the registers with asynchronous inputs
 	wire [7:0] all_mode_e = reset_n ? all_mode : 8'hFF;               // prn = /RESET
+	wire       kint_ena   = all_mode_e[0] & (~PERS_K30 | all_mode_e[3]); // KEYS.int_ena (K30: ALL_MODE0 & ALL_MODE3)
 	wire [7:0] rom_rg_e   = reset_n ? rom_rg : 8'd0;
 	wire [7:0] rgmod_e    = reset_n ? rgmod : 8'd0;
 	wire       sys_n_e    = reset_n & sys_n_q;                         // /SYS
@@ -275,6 +288,7 @@ module sp_acex (
 	wire       sr_s2_e    = reset_n & sr_s2;
 	wire [1:0] soft_e     = sr_s2_e ? 2'd3 : soft_q;                   // SOFT_RES[].prn = !DFF(..)
 	wire       soft_reset = soft_e == 2'd0;
+	wire       rst_d      = (kb_reset | (~PERS_K30 & ~all_mode_e[5])) & soft_reset;   // TDF:300 (K30: no ALL_MODE5 gate)
 	wire       cs_isa     = MR_N | cs_isa_q;                           // prn = LCELL(Q or !/MR)
 	wire       cs_romt    = MR_N | cs_romt_q;
 	wire       cs_casht   = MR_N | cs_casht_q;
@@ -337,15 +351,19 @@ module sp_acex (
 	wire       ras_rise = ~dc_ras & ras_nx;
 
 	// ================= DRAM strobes (TDF:858-898)
+	wire video_pg = page[7:4] == 4'b0101;
+	wire blk_mr_d = video_pg & (page[2] | (page[3] & acc_gliss));
+	wire blk_mr = PERS_K30 ? blk_mr_d : blk_mr_q;                     // K30: BLK_MR = LCELL(..)
 	wire we_out = mc_write | blk_mr | blk_mwr2;                      // /WE_OUT
-	wire cas_a  = dc_cas | cwh_q;
+	wire cas_a  = PERS_K30 ? dc_cas : dc_cas | cwh_q;                // K30: CAS_A = LCELL(DECODE.CAS)
 	wire casxe0 = ~mca[0] | dcas, casxe1 = mca[0] | dcas;
 	assign CAS_ = {cas_a | ~((mca[1] & casxe1) | mc_type), cas_a | ~((mca[1] & casxe0) | mc_type),
 	               cas_a | ~((~mca[1] & casxe1) | mc_type), cas_a | ~((~mca[1] & casxe0) | mc_type)};
 	assign RAS_ = {dc_ras, dc_ras};
 	wire dw_clr = we_out | dc_ras;                                    // DRAM_WRITE.clrn = !/WE_OUT & !RAS
 	wire dw_e   = ~dw_clr & dw_q;
-	assign WE_N = ~dw_e;
+	wire we_e   = ~reset_n | we_q;
+	assign WE_N = PERS_K30 ? we_e : ~dw_e;
 	wire wr_port = ~(IO_N | WR_N) & mctd_q;
 	assign MD_O  = acc_mdo;                                           // DMDX = ACC.MDO[7..0]
 	assign MD_OE = ~we_out | wr_port;
@@ -361,10 +379,10 @@ module sp_acex (
 	wire cint_set = ~(cbl_int_ena & (IO_N | M1_N));                  // CBL_INT.prn
 	wire cint_e  = cint_set | cint_q;
 	wire int_x   = ~ix_e | ~cint_e;
-	wire nmi_x   = ~all_mode_e[4] & kb_alt & ~kb_f12;
+	wire nmi_x   = ~PERS_K30 & ~all_mode_e[4] & kb_alt & ~kb_f12;    // K30: NMI_X = GND
 	wire [7:0] all_mode_nx = ~reset_n ? 8'hFF : (iowr_ev & am_en_d) ? d_bus : all_mode;
 	wire iclk    = intt & k_int;
-	wire iclk_nx = intt_nx & (~all_mode_nx[0] | k_int_qnx);
+	wire iclk_nx = intt_nx & (~(all_mode_nx[0] & (~PERS_K30 | all_mode_nx[3])) | k_int_qnx);   // KEYS.int_ena next
 	wire ix_ev   = ~iclk & iclk_nx;
 
 	// ================= XA multiplexer, sync to the MAX (TDF:766-837)
@@ -438,13 +456,12 @@ module sp_acex (
 	wire ayd_d = iom_n | WR_N | ~a91_q;
 
 	// ================= video (TDF:978-1045)
-	wire video_pg = page[7:4] == 4'b0101;
 	wire gliss    = acc_gliss & page[3] & video_pg;
 
 	// ================= registers
 	always @(posedge CLK) begin
 		if (CE) begin
-			rst_q   <= (kb_reset | ~all_mode_e[5]) & soft_reset;
+			rst_q   <= rst_d;
 			iowr_q  <= IO_N | WR_N;
 			iord_q  <= IO_N | RD_N;
 			bord_en <= bord_en_d;
@@ -512,7 +529,8 @@ module sp_acex (
 			// DRAM
 			cwh_q  <= ~mc_write & dc_cas;
 			dw_q   <= dw_e;
-			blk_mr <= video_pg & (page[2] | (page[3] & acc_gliss));
+			blk_mr_q <= blk_mr_d;
+			we_q   <= ~reset_n | we_out | dc_ras;
 			svwr_q <= svwr_e;
 			rgmod_en <= rgmod_en_d;
 			rgmod  <= ~reset_n ? 8'd0 : (iowr_ev & rgmod_en_d) ? d_bus : rgmod;
@@ -575,7 +593,8 @@ module sp_acex (
 			mctd_q <= 1'b0; ix_q <= 1'b1; i1_q <= 1'b0; i2_q <= 1'b0; rdxa_q <= 1'b0; sxa_q <= 1'b0; kbd_cc <= 1'b0;
 			kbd_dd <= 1'b0; tape_in <= 1'b0; mouse_d <= 1'b0; sinc_1 <= 1'b0; sinc_2 <= 1'b0; sinc_hold <= 9'd0;
 			s1m_q <= 1'b0; s1md_q <= 1'b0; copyh_q <= 1'b0; s2m_q <= 1'b0; s2md_q <= 1'b0; copyv_q <= 1'b0;
-			hold <= 8'h77; hold_en <= 1'b0; dos_q <= 1'b1; cwh_q <= 1'b0; dw_q <= 1'b0; blk_mr <= 1'b0; rgmod <= 8'd0;
+			hold <= 8'h77; hold_en <= 1'b0; dos_q <= 1'b1; cwh_q <= 1'b0; dw_q <= 1'b0; blk_mr_q <= 1'b0; we_q <= 1'b1;
+			rgmod <= 8'd0;
 			rgmod_en <= 1'b0; svwr_q <= 1'b1; all_mode <= 8'hFF; am_en <= 1'b0; dac1_q <= 1'b0; dac_q <= 1'b0;
 			ws_q <= 1'b0; bck_q <= 1'b0; audio_ch <= 1'b0; audio_r <= 16'd0; cbl_xx <= 8'd0; cbl_en <= 1'b0;
 			cbl_ctx <= 5'd0; cbl_cnt <= 8'd0; cint_q <= 1'b1; c88_q <= 1'b0; pfd_q <= 1'b0; mcwc_q <= 1'b1; w_q <= 1'b1;
@@ -622,10 +641,10 @@ module sp_acex (
 		.DOUBLE_CAS(dcas), .VAO(vao), .VDO0(vdo0), .VDO1(vdo1), .VDO2(vdo2), .VDO3(vdo3),
 		.VDM0(vd0), .VDM1(vd1), .VDM2(vd2), .VDM3(vd3), .V_WR(v_wr), .V_WEN(v_wen), .V_CS(v_cs), .WR_PIX(wr_pix),
 		.ZX_PORT({sp_sa, sp_scr & ~(A[13] & ~acc_gline[7]) & ~acc_gline[6] & ~all_mode_e[0], acc_gline[5:0]}),
-		.DIR_PORT({border[2:0], rgmod_e[2], rgmod_e[0], 2'b00, scr128}), .INTT(intt),
+		.DIR_PORT({border[2:0], rgmod_e[2] & ~PERS_K30, rgmod_e[0], 2'b00, scr128}), .INTT(intt),   // K30: [4] = GND
 		.CT_NX(ct_nxr), .CTH_NX(cth_nxr), .INTT_NX(intt_nx),
 		.VA_NX(VA_NX), .V_WR_NX(V_WR_NX), .VA_MOD(VA_MOD), .MODE_RQ(MODE_RQ), .MLO_RQ(MLO_RQ), .VA_ATR(VA_ATR),
-		.ATR_ZX(ATR_ZX), .PIX_RQ(PIX_RQ), .CFG_RST(CFG_RST));
+		.ATR_ZX(ATR_ZX), .PIX_RQ(PIX_RQ), .CFG_RST(CFG_RST), .PERS_K30(PERS_K30));
 
 	sp_dcp #(.MIF_HEX(MIF_DCP), .REFRESH_REG(1)) DECODE(.CLK(CLK), .CE(CE), .CE_N(CE_N), .RESET_N(reset_n), .RES_N(), .CT(ct[2:0]),
 		.CONTINUE(acc_cont), .RAS(dc_ras), .CAS(dc_cas), .MC_END(mc_end), .MC_BEGIN(mc_begin), .MC_TYPE(mc_type),
@@ -638,7 +657,7 @@ module sp_acex (
 		.SP_SCR(sp_scr), .SP_SA(sp_sa), .SCR128(scr128), .TEST_R(1'b0), .HDD_DATA(hdd_data), .HDD_FLIP(hdd_flip),
 		.RAM(dc_ram), .BLK_R(blk_r), .PN4Q(pn4q), .ACC_ON(acc_on), .DCPP(dcpp), .DCAS_FALL_EV(dcas_fall),
 		.BLK_MEM(blk_mem), .IOMM_N_NX(iomm_n_nx), .IOM_N_NX(iom_n_nx), .RAS_NX(ras_nx), .MC_TYPE_NX(mc_type_nx),
-		.CLK_Z80_NX(clk_z80_nx), .TYPE_NX(type_nx), .HDD_DATA_NX(hdd_data_nx), .CFG_RST(CFG_RST));
+		.CLK_Z80_NX(clk_z80_nx), .TYPE_NX(type_nx), .HDD_DATA_NX(hdd_data_nx), .CFG_RST(CFG_RST), .PERS_K30(PERS_K30));
 
 	sp_acceler ACC(.CLK(CLK), .CE(CE), .CE_N(CE_N), .RESET_N(reset_n), .CT(ct[2:0]), .CAS(dc_cas),
 		.CLK_Z80_EV(~clk_z80 & clk_z80_nx), .CONTINUE(acc_cont), .MC_END(mc_end), .MC_TYPE(mc_type), .AI(A),
@@ -652,7 +671,7 @@ module sp_acex (
 		.AY_CH_L(ay_l), .AY_CH_R(ay_r), .AY_CH_VAL(), .BEEPER(border[4]), .CFG_RST(CFG_RST));
 
 	sp_kbd #(.MIF_HEX(MIF_KBD)) KEYS(.CLK(CLK), .CE(CE), .CLK_K_EV(clk_k_ev), .KBD_CC(kbd_cc), .KBD_DD(kbd_dd),
-		.RF_N(keys_rf), .IO_N(key_io), .A(A[15:8]), .ENA(all_mode_e[1]), .INT_ENA(all_mode_e[0]), .KBO(kbo),
+		.RF_N(keys_rf), .IO_N(key_io), .A(A[15:8]), .ENA(PERS_K30 | all_mode_e[1]), .INT_ENA(kint_ena), .KBO(kbo),
 		.KB_RESET(kb_reset), .KB_F12(kb_f12), .KB_CTRL(kb_ctrl), .KB_ALT(kb_alt), .KB_SH(kb_sh), .INT(k_int),
 		.KB_F12_NX(kb_f12_nx), .KB_CTRL_NX(kb_ctrl_nx), .KB_ALT_NX(kb_alt_nx), .KB_SH_NX(kb_sh_nx),
 		.INT_Q_NX(k_int_qnx), .CFG_RST(CFG_RST));

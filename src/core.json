@@ -4,18 +4,19 @@
     "visible": true,
     "type": "osd",
     "order": 44,
-    "eeprom_bank": 255,
+    "eeprom_bank": 4,
+    "eeprom_init": "roms/cmos_306_mame.bin",
     "rtc_mode": 0,
     "roms": [
         {
-            "filename": "roms/kg/sp2k-3.04.rom",
+            "filename": "roms/kg/sp2k-3.06.rom",
             "address": 0
         }
     ],
     "boards": {
         "minig": {
             "link": 2,
-            "build": "26112102",
+            "build": "26112106",
             "bitstream": "karabas_minig.bin"
         }
     },
@@ -25,6 +26,35 @@
             "name": "Reset",
             "index": 0,
             "hotkey": "Menu+F12"
+        },
+        {
+            "type": "-"
+        },
+        {
+            "type": "F",
+            "name": "Disk A",
+            "slot": 0,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F5"
+        },
+        {
+            "type": "F",
+            "name": "Disk B",
+            "slot": 1,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F6"
+        },
+        {
+            "type": "F",
+            "name": "HDD Master",
+            "slot": 4,
+            "extensions": ".vhd .img .hdf"
+        },
+        {
+            "type": "F",
+            "name": "HDD Slave",
+            "slot": 5,
+            "extensions": ".vhd .img .hdf"
         }
     ]
 }

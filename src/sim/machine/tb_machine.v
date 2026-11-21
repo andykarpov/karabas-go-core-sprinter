@@ -4,7 +4,8 @@
 // same testbench runs in iverilog and Verilator (--timing).
 // Defines: CFG_BITS_T (configuration clocks counted as the whole stream; the full EP1K30 stream is 473 720, the
 // default here is the shortest with the whole MAME hash: 4096 = 512 bytes), RUN_US (simulated microseconds after the
-// release), ROM_HEX (the BIOS image, one byte per line). +trace: every M1 of the CPU.
+// release), ROM_HEX (the BIOS image, one byte per line). +trace: every M1 of the CPU. +hash=<hex> +pers=<n>: the
+// expected hash / personality of every boot (default 78eddfc6 / 0 = BIOS 3.04; 3.06: +hash=5aa954b6 +pers=1).
 `timescale 1ns/1ps
 `ifndef CFG_BITS_T
 `define CFG_BITS_T 4096
@@ -151,8 +152,8 @@ module tb_machine;
 			b_hash[nb] = cfg_hash; b_pers[nb] = cfg_pers; b_unk[nb] = cfg_unknown; b_m1[nb] = 20'hFFFFF; b_nout[nb] = 0;
 			nb = nb + 1;
 			->rel_ev;
-			$display("%0.1f us: ACEX released: %0d clocks, %0d bytes, hash %h, personality %0d, unknown %b, CSBR %h MCR %h",
-				$realtime / 1000.0, m.bits, cfg_bytes, cfg_hash, cfg_pers, cfg_unknown, m.csbr, m.mcr);
+			$display("%0.1f us: ACEX released: %0d clocks, %0d bytes, hash %h, personality %0d (sp_acex PERS_K30 %b), unknown %b, FNV-1a %h, CSBR %h MCR %h",
+				$realtime / 1000.0, m.bits, cfg_bytes, cfg_hash, cfg_pers, m.ACEX.PERS_K30, cfg_unknown, m.CFG_FNV, m.csbr, m.mcr);
 		end
 	end
 	// CPU writes in the configured map (BIOS activity): count, first few
@@ -172,7 +173,10 @@ module tb_machine;
 	// +reset: the button pressed 1 ms after the first release; +p2e: the control word of port 2E (1011/000) in the MA
 	// latch at that moment (as an OUT to port 2E leaves it); either must give a second, identical boot
 	integer k, j, again;
+	reg [31:0] exp_hash; integer exp_pers;
 	initial begin
+		if (!$value$plusargs("hash=%h", exp_hash)) exp_hash = 32'h78eddfc6;
+		if (!$value$plusargs("pers=%d", exp_pers)) exp_pers = 0;
 		again = $test$plusargs("reset") || $test$plusargs("p2e");
 		wait (on);
 		if (again) begin
@@ -194,7 +198,7 @@ module tb_machine;
 			if (b_m1[k] !== 20'h80000) begin $display("  ERROR: boot %0d does not start at 0000 of ROM page 8", k); errors = errors + 1; end
 			if (`CFG_BITS_T >= 4096) begin
 				if ($test$plusargs("scroll") ? (b_hash[k] !== 32'h3861cfa4 || b_pers[k] !== 2'd2) :
-				    (b_hash[k] !== 32'h78eddfc6 || b_pers[k] !== 2'd0 || b_unk[k] !== 1'b0)) begin
+				    (b_hash[k] !== exp_hash || b_pers[k] !== exp_pers[1:0] || b_unk[k] !== 1'b0)) begin
 					$display("  ERROR: boot %0d: wrong hash / personality", k); errors = errors + 1;
 				end
 			end

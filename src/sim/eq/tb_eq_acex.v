@@ -17,7 +17,10 @@
 // (from the netlist's I/O buffers) and the pin values.
 // +scen=0 (default): ports, pages, memory in all windows, video, AY, Covox / CBL, keyboard / mouse / IDE ports, ROM /
 //   cache / ISA / flash strobe, accelerator, random; +scen=1: 3.5 MHz and the original waits, CBL FIFO interrupts,
-//   COPY_SINC_V, soft reset; +scen=2: keyboard (PS/2 frames, TEST_SWITCH by F12, NMI by Alt).
+//   COPY_SINC_V, soft reset; +scen=2: keyboard (PS/2 frames, TEST_SWITCH by F12, Ctrl+Alt+Del, Alt+F12, a key held; ALL_MODE[5:0] random).
+// -DK30: the k30 personality (PERS_K30 = 1) against the k30 netlist (top SP2_ACEX of upstream/tt-sprinter-bios @ 085ef3c,
+//   lower-case port names, XA[3:0] inout). +mut=N (with -DK30): one k30 line forced back to its 3.03a form, the run
+//   must fail (run_eq.sh acex_k30_mut).
 `timescale 1ns/1ps
 `include "eq_cmp.vh"
 module tb_eq_acex;
@@ -28,7 +31,9 @@ module tb_eq_acex;
 	integer errors = 0, weak = 0;
 	integer seed = 7;
 	integer scen = 0;                                 // +scen=0 bus, 1 sync / CBL / soft reset, 2 keyboard
+	integer mut = 0;                                  // +mut=N (K30): a k30 line forced back to 3.03a
 	reg kb_done = 0;
+	integer kb_ph = 0; reg ph1_done = 0;              // scenario 2: phases of the PS/2 sequence for the bus side
 
 	// ---- Z80 pins: applied value and the value after the next CE
 	reg m1_n = 1, rf_n = 1, io_n = 1, wr_n = 1, rd_n = 1, mr_n = 1;
@@ -63,6 +68,21 @@ module tb_eq_acex;
 	always @(vd0) vd0_k = keep(vd0_k, vd0); always @(vd1) vd1_k = keep(vd1_k, vd1);
 	always @(vd2) vd2_k = keep(vd2_k, vd2); always @(vd3) vd3_k = keep(vd3_k, vd3);
 
+`ifdef K30
+	// k30: XA[3:0] inout (XA3 = TRI(GND, GND): never driven, the multiplexer drives it)
+	SP2_ACEX ref(.TG42(clk42), .CLKZ1(clkz_r), .\/wait (wait_w), .\/reset (res_w), .\/m1 (m1_n), .\/rf (rf_n),
+		.\/io (io_n), .\/wr (wr_n), .\/rd (rd_n), .\/mr (mr_n), .\/HALT (1'b1), .a(a), .d(d), .cs_rom(cs_rom_r),
+		.CS_CASH(cs_cash_r), .ra(ra_r), .v_cs(v_cs_r), .VA(va_r), .v_wr(v_wr_r), .VD3(vd3), .VD2(vd2), .VD1(vd1),
+		.VD0(vd0), .WR_COL(wr_col_r), .DAC_DATA(dac_data_r), .DAC_WS(dac_ws_r), .DAC_BCK(dac_bck_r), .md(md),
+		.ma(ma_r), .RAS_(ras_r), .CAS_(cas_r), .\/WE (we_r), .XACS(xacs_r), .XA({xa3, xa}), .SXA(sxa_r),
+		.RDXA(rdxa_r), .wr_awg(wr_awg_r), .RD_KMPS(rd_kmps_r), .wr_dwg(wr_dwg_r));
+	wire d_oe_r = ref.\d[0]~output .oe;
+	wire md_oe_r = ref.\md[0]~output .oe;
+	wire res_oe_r = ~ref.\/reset~output .i;          // open drain
+	wire wait_oe_r = ref.\/wait~output .oe;
+	wire cwh_r = 1'b0;                                 // no CAS_WRITE_HOLD in k30
+	localparam TB_NAME = "k30 SP2_ACEX";
+`else
 	BASE_303 ref(.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
 		.\/IO (io_n), .\/WR (wr_n), .\/RD (rd_n), .\/MR (mr_n), .\/HALT (1'b1), .A(a), .D(d), .CS_ROM(cs_rom_r),
 		.CS_CASH(cs_cash_r), .RA(ra_r), .V_CS(v_cs_r), .VA(va_r), .V_WR(v_wr_r), .VD3(vd3), .VD2(vd2), .VD1(vd1),
@@ -72,10 +92,13 @@ module tb_eq_acex;
 	// output enables of the bidirectional pins (netlist I/O buffers)
 	wire d_oe_r = ref.\D[0]~output .oe;
 	wire md_oe_r = ref.\MD[0]~output .oe;
-	wire [3:0] vd_oe_r = {ref.\VD3[0]~output .oe, ref.\VD2[0]~output .oe, ref.\VD1[0]~output .oe, ref.\VD0[0]~output .oe};
-	wire xa_oe_r = ref.\XA[2]~output .oe;
 	wire res_oe_r = ~ref.\/RESET~output .i;          // open drain
 	wire wait_oe_r = ref.\/WAIT~output .oe;
+	wire cwh_r = ref.CAS_WRITE_HOLD.q;
+	localparam TB_NAME = "3.03a BASE_303";
+`endif
+	wire [3:0] vd_oe_r = {ref.\VD3[0]~output .oe, ref.\VD2[0]~output .oe, ref.\VD1[0]~output .oe, ref.\VD0[0]~output .oe};
+	wire xa_oe_r = ref.\XA[2]~output .oe;
 
 	// ---- ours
 	wire clkz_o, wait_oe_o, res_oe_o, cs_rom_o, cs_cash_o, wr_col_o, dac_data_o, dac_ws_o, dac_bck_o, we_o, xacs_o;
@@ -92,7 +115,7 @@ module tb_eq_acex;
 		.VD2_O(vd2_o), .VD3_O(vd3_o), .VD_OE(vd_oe_o), .WR_COL(wr_col_o), .DAC_DATA(dac_data_o), .DAC_WS(dac_ws_o),
 		.DAC_BCK(dac_bck_o), .MD_I(md), .MD_O(md_o), .MD_OE(md_oe_o), .MA(ma_o), .RAS_(ras_o), .CAS_(cas_o),
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
-		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o), .CFG_RST(1'b0));
+		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	wire [7:0] d_pin_o = d_oe_o ? d_o : d;
@@ -218,6 +241,45 @@ module tb_eq_acex;
 	assign xa = (rdxa_r === 1'b1 && rdxa_late === 1'b1) ? 3'bzzz : mux_v[2:0];
 	assign xa3 = mux_v[3];
 
+	// ================= mutations (K30): one k30 line back to its 3.03a form; the bench must fail
+`ifdef K30
+	// (iverilog evaluates the RHS of a force only once unless it is a plain net: the 3.03a forms are nets here)
+	wire m_cas_a  = dut.dc_cas | dut.cwh_q;
+	wire m_we_n   = ~dut.dw_e;
+	wire m_blk_mr = dut.blk_mr_q;
+	wire m_kint   = dut.all_mode_e[0];
+	wire m_ena    = dut.all_mode_e[1];
+	wire m_nmi    = ~dut.all_mode_e[4] & dut.kb_alt & ~dut.kb_f12;
+	wire [7:0] m_dir = {dut.border[2:0], dut.rgmod_e[2], dut.rgmod_e[0], 2'b00, dut.scr128};
+	wire m_rst    = (dut.kb_reset | ~dut.all_mode_e[5]) & dut.soft_reset;
+	wire m_wrpic  = dut.SVIDEO.x_mode[5];
+	initial begin
+		#1;
+		case (mut)
+			1: force dut.cas_a = m_cas_a;              // CAS_A
+			2: force dut.WE_N = m_we_n;                // /WE
+			3: force dut.blk_mr = m_blk_mr;            // BLK_MR
+			4: force dut.kint_ena = m_kint;            // KEYS.int_ena
+			5: force dut.KEYS.ENA = m_ena;             // KEYS.ena
+			6: force dut.nmi_x = m_nmi;                // NMI_X
+			7: force dut.SVIDEO.DIR_PORT = m_dir;      // DIR_PORT[4]
+			8: force dut.rst_d = m_rst;                // /RESET (Ctrl+Alt+Del by ALL_MODE5)
+			9: force dut.SVIDEO.wr_pic_x = m_wrpic;    // WR_PIC
+			default: ;
+		endcase
+	end
+`endif
+
+	// keyboard debug (+kdbg): IN cycles and NMI terms during the phases of scenario 2; ends after the A phase
+	reg [1:0] kph_p = 0;
+	always @(posedge clk) if (ce && $test$plusargs("kdbg")) begin
+		if (kb_ph != 0 && dut.iord_ev) $display("%0d ph %0d IN %h: ENA %b allm %h kbo %h d %h ref d_oe %b | alt %b f12 %b nmi %b",
+			$time, kb_ph, a, dut.KEYS.ENA, dut.all_mode_e, dut.kbo, d, d_oe_r, dut.kb_alt, dut.kb_f12, dut.nmi_x);
+		if (kb_ph == 1 && dut.kb_alt && !dut.kb_f12) $display("%0d Alt+F12: allm %h nmi %b ma12 %b/%b", $time, dut.all_mode_e, dut.nmi_x, ma_o[12], ma_r[12]);
+		if (kph_p == 2 && kb_ph == 0) $finish;
+		kph_p <= kb_ph;
+	end
+
 	// ================= comparison
 	`EQ_CMP(clkz, 1, clkz_o, clkz_r)
 	`EQ_CMP(wait_oe, 1, wait_oe_o, wait_oe_r)
@@ -260,7 +322,7 @@ module tb_eq_acex;
 	always @(negedge clk) if (dbg_t >= 0 && $time >= dbg_t && $time < dbg_t + 600)
 		$display("%0d ce_n=%b ct=%0d io%b rd%b mr%b m1%b wr%b d %h | ras %b cas %b md %h | o: cas %b cwh %b mcw %b mct %b mdo %h mce %b ado %h dcpp %h | r: cas %b cwh %b mdo %h dcpp %h",
 			$time, ce_n, dut.ct[2:0], io_n, rd_n, mr_n, m1_n, wr_n, d, ras_r[0], cas_r, md, dut.dc_cas, dut.cwh_q, dut.mc_write, dut.mc_type, dut.acc_mdo, dut.mc_end, dut.acc_do, dut.dcpp,
-			ref.\DECODE|CAS .q, ref.CAS_WRITE_HOLD.q,
+			ref.\DECODE|CAS .q, cwh_r,
 			ref.\ACC|MDO ,
 			{ref.\DECODE|DCPP[7] .q, ref.\DECODE|DCPP[6] .q, ref.\DECODE|DCPP[5] .q, ref.\DECODE|DCPP[4] .q,
 			 ref.\DECODE|DCPP[3] .q, ref.\DECODE|DCPP[2] .q, ref.\DECODE|DCPP[1] .q, ref.\DECODE|DCPP[0] .q});
@@ -320,7 +382,7 @@ module tb_eq_acex;
 	integer cv_aya = 0, cv_ayd = 0, cv_acc = 0, cv_dcas = 0, cv_pdd0 = 0, cv_pdd1 = 0, cv_pdd2 = 0, cv_pdd3 = 0;
 	integer cv_kms0 = 0, cv_kms1 = 0, cv_kms2 = 0, cv_ts = 0, cv_f12 = 0, cv_nmi = 0, cv_cph = 0, cv_cpv = 0;
 	integer cv_kcc = 0, cv_ms = 0, cv_tape = 0, cv_rom = 0, cv_cch = 0, cv_turbo = 0, cv_wrom = 0, cv_worig = 0;
-	integer cv_vzx = 0, cv_vgr = 0, cv_glis = 0, cv_blkmr = 0, cv_kint = 0, cv_sh = 0;
+	integer cv_vzx = 0, cv_vgr = 0, cv_glis = 0, cv_blkmr = 0, cv_kint = 0, cv_sh = 0, cv_kbo = 0, cv_kdx = 0, cv_bmw = 0, cv_bmd = 0;
 	reg cvp_soft = 0, cvp_xacs = 1, cvp_dos = 1, cvp_kcc = 0, cvp_ms = 0, cvp_tape = 0, cvp_rom = 1, cvp_cch = 1, cvp_turbo = 1;
 	reg cvp_ix = 1, cvp_nmi = 0, cvp_a20 = 1, cvp_wrom = 1, cvp_kint = 1;
 	always @(posedge clk) if (ce & cmp_on) begin
@@ -364,6 +426,8 @@ module tb_eq_acex;
 		if (dut.gliss) cv_glis = cv_glis + 1; if (dut.blk_mr) cv_blkmr = cv_blkmr + 1;
 		if (cvp_kint != dut.k_int) cv_kint = cv_kint + 1; cvp_kint = dut.k_int;
 		if (dut.cth5_rise & ~dut.sinc_2) cv_sh = cv_sh + 1;
+		if (~dut.mc_write & ~dut.blk_mwr2) begin if (dut.blk_mr) cv_bmw = cv_bmw + 1; if (dut.blk_mr_d !== dut.blk_mr_q) cv_bmd = cv_bmd + 1; end
+		if (dut.kbo !== 8'hFF) cv_kbo = cv_kbo + 1; if (dut.KEYS.kdx_q !== 6'h3F) cv_kdx = cv_kdx + 1;
 	end
 	task cov_report; begin
 		$display("  coverage: port writes BORDER %0d ALL_MODE %0d RGMOD %0d HOLD %0d CBL_XX %0d ROM_RG %0d ISA_PORT %0d SYS %0d SYS_PG %0d,",
@@ -380,6 +444,8 @@ module tb_eq_acex;
 			cv_kcc, cv_ms, cv_tape, cv_kint, cv_rom, cv_cch, cv_turbo);
 		$display("    WAIT_ROM %0d, WAIT_ORIG CEs %0d, video writes ZX / graphics CEs %0d %0d, GLISSER CEs %0d, BLK_MR CEs %0d, SINC_HOLD[8..4] counts %0d",
 			cv_wrom, cv_worig, cv_vzx, cv_vgr, cv_glis, cv_blkmr, cv_sh);
+		$display("    ZX matrix: KBO != FF CEs %0d, KDX != 3F CEs %0d; BLK_MR in DRAM writes (MC_WRITE = 0, no other block) CEs %0d, k30 / 3.03a forms differ there %0d",
+			cv_kbo, cv_kdx, cv_bmw, cv_bmd);
 	end endtask
 	task mark(input [8*24-1:0] name); $display("  [%0d us, %0d cycles] %0s", $time / 1000, n_ops, name); endtask
 
@@ -510,6 +576,7 @@ module tb_eq_acex;
 	reg [15:0] wa;
 	initial begin
 		if (!$value$plusargs("scen=%d", scen)) scen = 0;
+		if (!$value$plusargs("mut=%d", mut)) mut = 0;
 		// mode table in the video RAM: word {page, CTH, CT5, 11, CTV[8..3]}, byte 3 = MODE0, 2 = MODE1, 1 = MODE2
 		for (p = 0; p < 2; p = p + 1) for (v = 0; v < 64; v = v + 1) for (h = 0; h < 64; h = h + 8) begin
 			base = $random(seed) & 255;
@@ -558,13 +625,29 @@ module tb_eq_acex;
 				begin
 					ps2_byte(8'h07); repeat (4500) @(posedge clk);          // F12: TEST_SWITCH -> TURBO_HAND
 					ps2_byte(8'h11); repeat (4500) @(posedge clk);          // Alt: NMI (and its matrix row)
+					// Ctrl+Alt+Del twice (ALL_MODE5 random): 3.03a resets only with ALL_MODE5 = 1, k30 always
+					ps2_byte(8'h14); repeat (4500) @(posedge clk);          // Ctrl
+					ps2_byte(8'hE0); ps2_byte(8'h71); repeat (9000) @(posedge clk);   // Del (E0 71)
+					ps2_byte(8'hE0); ps2_byte(8'hF0); ps2_byte(8'h71); ps2_byte(8'hF0); ps2_byte(8'h14);
+					ps2_byte(8'hF0); ps2_byte(8'h11); repeat (4500) @(posedge clk);
+					ps2_byte(8'h14); ps2_byte(8'h11); ps2_byte(8'hE0); ps2_byte(8'h71); repeat (9000) @(posedge clk);
+					ps2_byte(8'hE0); ps2_byte(8'hF0); ps2_byte(8'h71); ps2_byte(8'hF0); ps2_byte(8'h14);
+					ps2_byte(8'hF0); ps2_byte(8'h11); repeat (4500) @(posedge clk);
+					// Alt+F12 (NMI_X of 3.03a, by ALL_MODE4); A held (ZX matrix reads with ALL_MODE1 0 / 1)
+					kb_ph = 1; ps2_byte(8'h11); repeat (4500) @(posedge clk); ps2_byte(8'h07); repeat (9000) @(posedge clk);
+					ps2_byte(8'hF0); ps2_byte(8'h07); ps2_byte(8'hF0); ps2_byte(8'h11);
+					kb_ph = 2; ps2_byte(8'h1C); repeat (18000) @(posedge clk); ps2_byte(8'hF0); ps2_byte(8'h1C);
+					kb_ph = 0; repeat (4500) @(posedge clk);
 					kb_done = 1;
 				end
 				begin
 					while (!kb_done) begin
-						case ($random(seed) & 7)
+						// Alt+F12: ALL_MODE4 = 0 (NMI of 3.03a enabled); A held: matrix reads with ALL_MODE1 = 0 and 1
+						if (kb_ph == 1) begin if (!ph1_done) iow(P_ALLM, 8'h01); ph1_done = 1; end
+						if (kb_ph == 2) begin iow(P_ALLM, 8'h01); ior(16'hFDFE); ior(16'h00FE); iow(P_ALLM, 8'h0B); ior(16'hFDFE); end
+						else case ($random(seed) & 7)
 							0, 1: ior({$random(seed), 8'hFE}); 2: m1cyc($random(seed)); 3: inta;
-							4: iow(P_ALLM, {$random(seed)} & 8'h0F); 5: mrd($random(seed)); default: idle(4);
+							4: iow(P_ALLM, {$random(seed)} & ((kb_ph == 1) ? 8'h2F : 8'h3F)); 5: mrd($random(seed)); default: idle(4);
 						endcase
 					end
 				end
@@ -673,7 +756,7 @@ module tb_eq_acex;
 			iow(P_W1, 8'h05);
 		end
 		idle(10);
-		$display("tb_eq_acex (3.03a BASE_303 vs sp_acex, scenario %0d), %0d us simulated, %0d bus cycles:", scen,
+		$display("tb_eq_acex (%0s vs sp_acex, scenario %0d, mutation %0d), %0d us simulated, %0d bus cycles:", TB_NAME, scen, mut,
 			$time / 1000, n_ops);
 		clkz_report; wait_oe_report; res_oe_report; cs_report; ra_report; d_oe_report; d_pin_report; ma_report;
 		ras_cas_report; md_oe_report; md_pin_report; va_report; v_wr_report; vd_oe_report; vd_out_report;

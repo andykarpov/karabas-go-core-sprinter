@@ -24,3 +24,11 @@
 		errors = errors + NAME``_m0; \
 		if (NAME``_tg == 0) begin $display("  %-10s never toggles: test too weak", `"NAME`"); weak = weak + 1; end \
 	end endtask
+// karabas: the personality input of sp_acex / sp_dcp / sp_video2: 1 with -DK30 (the k30 benches), else 3.03a
+`ifdef K30
+`define PERS_K30_V 1'b1
+`define PERS_NAME "k30"
+`else
+`define PERS_K30_V 1'b0
+`define PERS_NAME "3.03a"
+`endif

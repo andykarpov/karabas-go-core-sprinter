@@ -17,7 +17,8 @@
 // an error); a histogram of the cache M1 cycles by c_f and the video requests of that cycle; MA[14..12] across the
 // WR_AWG rise. The first X the T80 takes prints the last 32 CLK of the sp_sram arbiter and ends the run (+nolstop).
 // The ideal DRAM of the reference also drives MD in a CPU write the ACEX blocked (see dr_rd).
-// +scen=N as tb_cpu_acex (0 ports / pages, 1 interrupts, 2 accelerator / 3.5 MHz, 3 video RAM + fastram).
+// +scen=N as tb_cpu_acex (0 ports / pages, 1 interrupts, 2 accelerator / 3.5 MHz, 3 video RAM + fastram, 4 vertical
+// accelerator modes from DRAM as Flex Navigator). +logt: the time of every log entry, +m1t: every M1 address.
 // Debug: vvp -n build/tb_cpu_acexm.vvp +scen=N [+stop] [+dbg=<ns>] [+cpuref] [+nolstop]
 `timescale 1ns/1ps
 `include "eq_cmp.vh"
@@ -91,7 +92,7 @@ module tb_cpu_acexm;
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
 		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o),
 		.CT_PH(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq),
-		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0));
+		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	// D / MD compared where the ACEX drives them (the memories answer at other times than the ideal models)
@@ -477,6 +478,8 @@ module tb_cpu_acexm;
 		fast_p = fast_o;
 	end
 
+	// M1 trace (+m1t): every opcode fetch address
+	always @(negedge c_m1) if ($test$plusargs("m1t") && c_rf) $display("  M1 %h at %0d ns", c_a, $time);
 	// ================= log port 2001, end 2002, PS/2 bytes on the markers A0 / A1
 	reg [7:0] lg [0:63]; integer nlg = 0, done = 0, n_inta = 0;
 	reg [7:0] ps2_val = 0; event ps2_ev;
@@ -484,6 +487,7 @@ module tb_cpu_acexm;
 	always @(posedge clk) if (ce && ~c_io && c_m1 && ~c_wr && c_wrx) begin
 		if (c_a == 16'h2001) begin
 			lg[nlg] = c_do; nlg = nlg + 1;
+			if ($test$plusargs("logt")) $display("  log %h at %0d ns", c_do, $time);
 			if (c_do == 8'hA0) begin ps2_val = 8'h1C; -> ps2_ev; end
 			if (c_do == 8'hA1) begin ps2_val = 8'h32; -> ps2_ev; end
 		end
@@ -526,6 +530,7 @@ module tb_cpu_acexm;
 		for (i = 16'h0010; i < 16'h0018; i = i + 1) begin dset(i, 0, 8'h00); dset(i, 1, 8'h00); end
 		dset(16'hFFEE, 0, 8'h00); dset(16'hFFEE, 1, 8'h00); dset(16'hFFEF, 0, 8'h00); dset(16'hFFEF, 1, 8'h00);
 		dset(16'h2001, 0, 8'h00); dset(16'h2002, 0, 8'h00);
+		dset(16'h2089, 0, 8'hC4);                    // OUT (89),A with A = 20..3F: the line port (scenario 4)
 		// the program in every ROM page, the scenario at 3FFF
 		for (i = 0; i < 16384; i = i + 1) prog[i] = 8'h00;
 		$readmemh("build/cpu_acex.hex", prog);
@@ -544,6 +549,10 @@ module tb_cpu_acexm;
 			// routine, INC (HL), the three self-modifying cases, the loop; the ROM byte under smc2; the end
 			e(8'hF6); e(8'h8D); e(8'h06); e(8'hDC); e(8'h78); e(8'h56); e(8'h78); e(8'h12); e(8'h56); e(8'hC5);
 			e(8'h54); e(8'hA7); e(8'h3D); e(8'h5B); e(8'h6A); e(8'h00); e(8'hE3);
+		end else if (scen == 4) begin
+			// vertical accelerator modes on page 50 run from DRAM as Flex Navigator: fill sum of a column, glyph sum
+			// of a column, the last lines of the two glyph columns, the last line of the last fill column
+			e(8'hA4); e(8'hD0); e(8'hFF); e(8'h80); e(8'h01); e(8'h5A); e(8'hE4);
 		end else begin
 			e(8'hA0); e(8'h38); e(8'h01); e(8'hA1); e(8'h22); e(8'h02); e(8'hE1);
 			sinc_lo = 2 * 96;
@@ -558,7 +567,7 @@ module tb_cpu_acexm;
 		while (res_w !== 1'b1) @(posedge clk);
 		$display("  /RESET released at %0d ns", $time);
 		ld_run = 1;
-		t_end = $time + 400000;
+		t_end = $time + (scen == 4 ? 650000 : 400000);
 		while (!done && $time < t_end) @(posedge clk);
 		repeat (200) @(posedge clk);
 		ld_run = 0; repeat (40) @(posedge clk);

@@ -10,7 +10,9 @@
 ;   video-only page 54), read back from the DRAM copy; the fastram (cache, IN (FB) / IN (7B)): a stage in DRAM
 ;   (window 2) fills and sums cache bytes, copies code into the cache and calls it: M1 from the cache, writes 3 T
 ;   apart (LD (nn),SP, PUSH with SP even / odd, CALL), read-modify-write (INC (HL), EX (SP),HL), a write followed
-;   at once by the fetch of that byte / of the other byte of its word (self-modifying code), a loop.
+;   at once by the fetch of that byte / of the other byte of its word (self-modifying code), a loop;
+;   scenario 4: the accelerator on the graphics page 50 as Flex Navigator draws (vertical fill LD E,E and the glyph
+;   loop LD L,L read / OR / XOR + LD A,A vertical write, PORT_Y per column), from the ROM and from DRAM.
 ; With ALL_MODE0 = 1 the accelerator decodes LD r,r: the code has none outside the accelerator part.
 P_LOG	equ	#2001
 P_END	equ	#2002
@@ -20,6 +22,7 @@ P_CNF	equ	#00c6
 P_HOLD	equ	#20cb
 P_W1	equ	#4089
 P_W3	equ	#80f5
+P_W2	equ	#40a9
 P_AGR	equ	#00c4
 P_CASH1	equ	#00fb
 P_CASH0	equ	#007b
@@ -70,6 +73,8 @@ start:	ld	bc,P_FE
 	jp	z,scen2
 	cp	3
 	jp	z,scen3
+	cp	4
+	jp	z,scen4
 
 	; ---- scenario 0
 	; internal ports: the internal data win over the ACEX
@@ -150,6 +155,130 @@ scen2:	OUTP	P_W3, #10
 	OUTP	P_CNF, #03
 	ld	a,#e2
 	jp	theend
+
+	; ---- scenario 4: vertical accelerator modes on the graphics page, literally as Flex Navigator draws (from
+	; DRAM; the counter from an immediate operand read: LD D,D / LD A,8 / LD B,B; the line port by OUT (89),A,
+	; i.e. A15-A8 = the line, port 2089 -> descriptor C4 in the testbench): panels = vertical fills (8A37),
+	; glyphs = LD L,L read + OR / XOR + LD A,A vertical write (B8BD..B90D)
+scen4:	ld	a,#a4			; the start (time mark)
+	LOG
+	OUTP	P_CNF, #03		; turbo, no original waits (as DSS runs)
+	OUTP	P_ALLM, #04
+	OUTP	P_W1, #50		; window 1: graphics page 50 (DRAM + video RAM)
+	OUTP	P_W3, #10		; window 3: DRAM, the glyphs and masks
+	ld	hl,#c100		; glyphs: C100.. = 01 02 .. 80, C108.. = 80 40 .. 01; masks C110..C127 = 00
+	ld	a,1
+	ld	b,8
+s4g:	ld	(hl),a
+	inc	l
+	rlca
+	djnz	s4g
+	ld	hl,#c108		; C108+i = 80 >> i
+	ld	a,#80
+	ld	b,8
+s4g2:	ld	(hl),a
+	inc	l
+	rrca
+	djnz	s4g2
+	ld	hl,#c110
+	ld	b,#18
+s4g3:	ld	(hl),0
+	inc	l
+	djnz	s4g3
+	OUTP	P_W2, #11		; the drawing code into DRAM (window 2, page 11) and run there
+	ld	hl,s4draw
+	ld	de,#8000
+	ld	bc,s4len
+	ldir
+	call	#8000
+	ld	d,#20			; LOG: sums of 4000 on lines 20..27 (D0) and of 4004 on lines 28..2F (FF),
+	ld	l,0			; 4004 and 4005 of line 2F (80 01), 4003 of line 27 (5A)
+	call	s4col
+	LOG
+	ld	d,#28
+	ld	l,4
+	call	s4col
+	LOG
+	ld	bc,P_AGR
+	ld	a,#2f
+	out	(c),a
+	ld	a,(#4004)
+	LOG
+	ld	a,(#4005)
+	LOG
+	ld	bc,P_AGR
+	ld	a,#27
+	out	(c),a
+	ld	a,(#4003)
+	LOG
+	ld	a,#e4
+	jp	theend
+s4col:	ld	h,#40			; A = the sum of (HL) on lines D..D+7
+	ld	e,0
+	ld	b,8
+s4c2:	push	bc
+	ld	bc,P_AGR
+	out	(c),d
+	pop	bc
+	ld	a,(hl)
+	add	a,e
+	ld	e,a
+	inc	d
+	djnz	s4c2
+	ld	a,e
+	ret
+s4draw:	OUTP	P_ALLM, #05		; the accelerator on
+	ld	d,d			; panels (8A37): the counter from the operand of LD A,8
+	ld	a,#08
+	ld	b,b
+	ld	hl,#4000
+	ld	d,#5a
+	ld	bc,4
+s4f:	ld	a,#20
+	out	(#89),a			; line 20
+	ld	e,e			; vertical fill: (HL) on lines 20..27 = 5A
+	ld	(hl),d
+	ld	b,b
+	inc	hl
+	dec	bc
+	ld	a,b
+	or	c
+	jr	nz,s4f
+	ld	d,d			; glyphs (B8BD): the counter from the operand of LD H,8
+	ld	h,#08
+	ld	b,b
+	ld	hl,#c100
+	ld	bc,#4004
+	ld	de,#c110
+	exx
+	ld	b,2
+s4gl:	exx
+	ld	l,l			; the glyph column -> buffer
+	ld	a,(hl)
+	ld	b,b
+	ld	a,#28
+	out	(#89),a			; line 28
+	ex	de,hl
+	ld	l,l			; buffer |= masks
+	or	(hl)
+	ld	b,b
+	ld	l,#20
+	ld	l,l			; buffer ^= masks
+	xor	(hl)
+	ld	a,a			; buffer -> (BC) on lines 28..2F
+	ld	(bc),a
+	ld	b,b
+	ld	l,#10
+	ex	de,hl
+	inc	bc
+	ld	a,l
+	add	a,8
+	ld	l,a
+	exx
+	djnz	s4gl
+	OUTP	P_ALLM, #04
+	ret
+s4len	equ	$-s4draw
 
 	; ---- scenario 1: interrupts
 scen1:	OUTP	P_HOLD, #7e

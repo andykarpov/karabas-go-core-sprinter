@@ -4,6 +4,8 @@
 
 ## 1. BIOS (ROM 256 КБ)
 
+**Решение 2026-11-21: поддерживается только BIOS 3.06** (в `.kg`, CMOS `roms/cmos_306_mame.bin`). Остальные версии не поддерживаются и в сборку не входят; на плате (26112106) 2.13, 2.17, 3.00, 3.03, 3.04 грузят DSS 1.62 до Flex Navigator, 3.05 («BIOS v2.54», 2022, оба образа) уходит в циклический перезапуск — его не чиним. Конфигурация 3.03a в RTL остаётся (основа перевода, k30 — переключатели поверх неё, SCROLL), таблица хешей тоже.
+
 ### 1.1 Итог по версиям MAME
 
 | Версия | Дата | Откуда исходный образ | Совпадение с MAME (CRC32 + SHA1) | Локально |
@@ -13,8 +15,8 @@
 | 3.00 | 07.04.2002 | `BIOS_ROMS.ZIP` → `_SP_300` (CRC `0d0aa5d4`) = [zxgit.org/Sprinter/2000](https://zxgit.org/Sprinter/2000) `2000/fw/bios/sp2k-3.00.253.bin` | **после правки** (= 300) | `roms/mame-named/sp2k-3.00.rom`; исходники `roms/winglion-bios-roms/x/_SP_300/`, `roms/zxgit-sprinter-2000/` |
 | 3.03 | 13.05.2003 | `BIOS_ROMS.ZIP` → `_SP_303` (CRC `88e3e23b`) = zxgit `sp2k-3.03.253.bin` | **после правки** (= 303) | `roms/mame-named/sp2k-3.03.rom` |
 | 3.04 | 17.06.2003 | zxgit `Sprinter/2000` `2000/fw/bios/sp2k-3.04.253.bin` (то же в `2003s/`, `2016s/`); [app.sprinter.ru/os/sprinter-firmware](https://app.sprinter.ru/os/sprinter-firmware) `sp2k_1k30_3.04.253.zip` → `sp2k-1k30-3.04.253.bin` | **да, как скачано** | `roms/zxgit-sprinter-2000/2000_fw_bios_sp2k-3.04.253.bin`, `roms/app-sprinter-firmware-304/x/sp2k-1k30-3.04.253.bin`, копия `roms/mame-named/sp2k-3.04.rom` |
-| 3.05 | 01.09.2022 | **не найден** | — | — |
-| 3.06 | 25.06.2025 | **не найден** | — | — |
+| 3.05 | 01.09.2022 | от пользователя (Telegram, 2026-11-21) `EP1K30-305#000.ROM`, CRC `2d46deaf` — **другая сборка**, не MAME `fe1c2685` (не номер платы: перебор 0..999 не совпал); номер платы 0; строка `Hardware v3.05` | — | `roms/telegram-2026-11-21/sp2k-3.05-ep1k30.rom` |
+| 3.06 | 25.06.2025 | от пользователя (Telegram, 2026-11-21) `EP1K30-306#000.ROM` = **MAME `187f4382` байт в байт** (BIOS 3.06, SETUP 1.60, нужен DSS ≥ 1.70); также `EP1K50-306#000.ROM` — та же BIOS с конфигурацией для EP1K50 | да | `roms/telegram-2026-11-21/sp2k-3.06-ep1k30.rom` (+ копия `roms/mame-named/sp2k-3.06.rom`), `sp2k-3.06-ep1k50.rom` |
 
 Все пять полученных `roms/mame-named/*.rom` проверены по CRC32 и SHA1 из `sprinter.cpp` (`python3 -I`, zlib / hashlib).
 
@@ -167,3 +169,17 @@ print('%08x' % (zlib.crc32(d) & 0xffffffff))
 - doc.sprinter.ru не открылся (нет TLS-соединения).
 
 Объём локально: 134 МБ (из них `SprinterEmu.rar` 35 МБ и разрежённый `sp_disk1.vhd`: 2 ГиБ по размеру, 54 МБ на диске). Больше, чем «десятки МБ», из-за образа HDD; при нехватке места его можно удалить, архив `.rar` остаётся.
+
+### Образы 3.05 / 3.06 и системный диск DSS 1.7x (от пользователя, 2026-11-21)
+
+- Хеш конфигурации ACEX по алгоритму MAME (сумма по первым 4096 **записям** потока, по биту в записи — см. `docs/configs.md`, скрипт `acxhash.py`): 3.05 и 3.06 EP1K30 — **`5aa954b6`** (k30), 3.06 EP1K50 — `e9dcc183` (другой кристалл; не нужна). Числа `383a0f9f` / `8cd33f23`, записанные здесь раньше, — ошибка (сумма сырых байтов ROM с `0x30100`, не хеш MAME).
+- Архивы `~/Downloads/Telegram Desktop/`: `SPRINTER.7z` / `SPRINTER_archive.zip` — одно дерево системного диска (DOCS, DEV, DEMOS, UTILS, GAMES, MEDIA, ZX, TRD, DSS, TESTS, FN, BIN, MODEM, C, TITD); `SPRINTER_v2.7z` — новее: `SYSTEM.DOS` 25.06.2025 (DSS 1.7x, под BIOS 3.06), без TITD. Из `SPRINTER_v2` собирать образ HDD FAT16 для проверки 3.06.
+
+### Авторский MAME 3.06 (`mame_release_v306_25.05.2025.rar`, от пользователя 2026-11-21)
+
+Распаковано нужное в `~/Downloads/karabas-sd-sprinter/mame306/` (сам `mame.exe` — Windows, не нужен):
+- `roms/sprinter.zip` — **полный набор BIOS MAME**, все 7 CRC совпадают с `sprinter.cpp`, в том числе **3.05 `fe1c2685`** (→ `roms/mame-named/sp2k-3.05.rom`); 3.05 из Telegram `2d46deaf` — другая сборка.
+- `roms/sprinter/_SPRIN.BIN` — ещё одна сборка 3.06 (`df18c931`, SETUP 1.60; хеш конфигурации — пересчитать `acxhash.py`).
+- `IMG/sp_hdd_sys.chd` (96 МБ) — системный HDD автора под 3.06 (нужен `chdman extracthd` → сырой образ для SD); `IMG/dss171u.img` — загрузочная дискета DSS 1.71; `nvram/sprinter_6/rtc` — CMOS (128 байт) автора под 3.06; `_306.bat` — запуск: дисковод 0 5.25" QD, 1 — 3.5" HD (дискета DSS во 2-м), HDD1 sys, HDD2 media, CD на втором канале, NeoGS на ISA.
+- Официальный релиз 3.06 (`spdx_release_v306_25.05.2025`): `hdd/system.zip` (DSS 3.06, 666 файлов, без `BOOT.EXE`), `firmware/` (ROM EP1K30/50, `.pof` MAX EPM7064 / EPM7128, `UP306.EXE`), `docs/sp-dx-sch.pdf`; hotfix1 — `UP306F1.EXE` (BIOS внутри).
+

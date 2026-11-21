@@ -81,8 +81,11 @@ module tb_eq_dcp;
 		.WR_TM9(wr_tm9_o), .WR_AWG(wr_awg_o), .RD_KP11(rd_kp11_o), .KP11_MIX(kp11_o), .REFRESH_EV(refresh_ev),
 		.G_LINE(gl), .GA(ga_o), .GRAF(graf_o), .SP_SCR(sp_scr_o), .SP_SA(sp_sa_o), .SCR128(scr128_o),
 		.TEST_R(test_r), .HDD_DATA(hdd_data_o), .HDD_FLIP(hdd_flip_o), .RAM(ram_o), .BLK_R(blk_r_o), .PN4Q(pn4_o),
-		.ACC_ON(acc_on), .DCPP(dcpp_o), .DCAS_FALL_EV(dcas_fall_ev), .BLK_MEM(blk_mem));
+		.ACC_ON(acc_on), .DCPP(dcpp_o), .DCAS_FALL_EV(dcas_fall_ev), .BLK_MEM(blk_mem), .PERS_K30(`PERS_K30_V));
 
+	// -DK30 +mut: the k30 PN5 clear forced back to 3.03a (must fail)
+	wire m_pn_clr5 = dut.pn_clr_lo & dut.pn_clr_hi;   // a plain net: iverilog evaluates another force RHS once
+	initial if ($test$plusargs("mut")) #1 force dut.pn_clr5 = m_pn_clr5;
 	`EQ_CMP(res, 1, res_o, res_r)
 	`EQ_CMP(ras_cas, 2, ({ras_o, cas_o}), ({ras_r, cas_r}))
 	`EQ_CMP(mc, 4, ({mcb_o, mce_o, mct_o, mcw_o}), ({mcb_r, mce_r, mct_r, mcw_r}))
@@ -343,7 +346,7 @@ module tb_eq_dcp;
 		th_nx = 1; cnf(8'h03);
 		for (i = 0; i < 200; i = i + 1) rand_op;
 		idle(10);
-		$display("tb_eq_dcp (3.03a DCP vs sp_dcp), %0t ns:", $time);
+		$display("tb_eq_dcp (%0s DCP vs sp_dcp%0s), %0t ns:", `PERS_NAME, $test$plusargs("mut") ? ", mutation PN5" : "", $time);
 		res_report; ras_cas_report; mc_report; ma_report; mca_report; clk_z80_report; turbo_report; wait_n_report;
 		iom_report; dout_report; page_report; type_report; dcpp_report; ra_report; cs_report; port_report;
 		pn_bits_report; wr_dwg_report; wr_tm9_report; wr_awg_report; rd_kp11_report; kp11_mix_report; ga_report;

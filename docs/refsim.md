@@ -14,6 +14,7 @@ src/sim/ahdl/build_ref.sh [SRC] [TOP] [NAME]   # по умолчанию ACEX SP
 | `303A` | `upstream/tt-sp2000-acex` (3.03a, основа перевода) | `BASE_303` |
 | `K30` | `upstream/tt-sprinter-bios` @ 085ef3c `src/altera/acex/k30` (BIOS 3.05+) | `SP2_ACEX` (NAME `K30`) |
 | `SCROLL` | `upstream/tt-scroll-cnf/src` (конфигурация игры) | `SCROLL` |
+| `build/src_k30/src/altera/acex/k30` (после `K30`) | подмодули k30: `build_ref.sh <каталог> DCP DCPK30`, `… VIDEO2 VIDK30` (`run_eq.sh dcp_k30` / `video2_k30` собирают сами) | `DCP`, `VIDEO2` |
 | каталог | любой каталог с `.TDF` / `.INC` / `.MIF` | — |
 
 - Quartus — образ `karabas-quartus:13.0sp1` (docker, без сети), ~10 с на модуль. Результат: `src/sim/ahdl/build/<TOP>/simulation/modelsim/<TOP>.vo` (вне git).
