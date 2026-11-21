@@ -216,6 +216,8 @@ wire [7:0] sdc_byte_in_data, sdc_byte_out_data;
 localparam SW_N = 2;
 wire [SW_N*8-1:0] softsw;
 
+wire [7:0] cmos_q, rtc_a, rtc_di, rtc_do;
+wire       rtc_wr_n;
 kg_mcu2 #(
 	.CAPS(16'h0000),
 	.SW_N(SW_N),
@@ -223,7 +225,9 @@ kg_mcu2 #(
 	.ENABLE_OSD(1),
 	.ENABLE_IMG(1),
 	.ENABLE_PORTS(4'b0000),
-	.ENABLE_RTC(0),
+	.ENABLE_RTC(1),
+	.RTC_SEND_LIMIT(128),
+	.RTC_COALESCE(1),   // SETUP saves ~150 CMOS writes in a burst (docs/rtc.md)
 	.ENABLE_AUX(0),
 	.ENABLE_FT(1),
 	.ENABLE_SD2(0)
@@ -324,15 +328,15 @@ kg_mcu2 #(
 	.PORT_IN_FULL	(),
 	.PORT_STAT		(),
 	.PORT_STAT_WR	(),
-	.RTC_A			(8'd0),
-	.RTC_DI			(8'd0),
+	.RTC_A			(rtc_a),
+	.RTC_DI			(rtc_di),
 	.RTC_CS			(1'b1),
-	.RTC_WR_N		(1'b1),
+	.RTC_WR_N		(rtc_wr_n),
 	.MATRIX_CMD		(),
 	.MATRIX_CMD_WR	(),
 	.DEBUG_ADDR		(16'd0),
 	.DEBUG_DATA		(16'd0),
-	.RTC_DO			(),
+	.RTC_DO			(rtc_do),
 	.FT_SPI_ON		(mcu_ft_spi_on),
 	.FT_VGA_ON		(mcu_ft_vga_on),
 	.FT_RESET		(mcu_ft_reset),
@@ -425,12 +429,14 @@ sp_machine #(
 );
 
 // ---------- storage: IDE and WD1793 on the image files, the read data of the peripherals on MD (docs/storage.md)
-// CMOS hook (docs/rtc.md, sp_cmos): its strobes are m_cmos_dwr / m_cmos_as (active high) / m_cmos_drd, its address /
-// write byte m_md[15:8]; its read byte goes to CMOS_Q (on MD while m_cmos_drd is low). Until then a CMOS read gives 00.
+// CMOS (docs/rtc.md): sp_cmos keeps the address, sends writes to the MCU mirror (kg_l2_rtc), its read byte goes to CMOS_Q
+// (on MD while m_cmos_drd is low)
+sp_cmos u_cmos(.CLK(clk_sys), .MD(m_md), .CMOS_AS(m_cmos_as), .CMOS_DWR(m_cmos_dwr), .CMOS_DRD(m_cmos_drd),
+	.Q(cmos_q), .OE(), .CLK_BUS(clk_bus), .RTC_A(rtc_a), .RTC_DI(rtc_di), .RTC_WR_N(rtc_wr_n), .RTC_DO(rtc_do));
 sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
 	.MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a), .XHD_RES(m_xhd_res), .XHD_RD(m_xhd_rd),
 	.XHD_WR(m_xhd_wr), .XHD1_CS(m_xhd1_cs), .XHD2_CS(m_xhd2_cs), .WG_RD_N(m_wg_rd_n), .WG_WR_N(m_wg_wr_n),
-	.WR_PDOS(m_wr_pdos), .RD_KMPS(m_rd_kmps), .FDD_1440(m_fdd_1440), .CMOS_DRD(m_cmos_drd), .CMOS_Q(8'h00),
+	.WR_PDOS(m_wr_pdos), .RD_KMPS(m_rd_kmps), .FDD_1440(m_fdd_1440), .CMOS_DRD(m_cmos_drd), .CMOS_Q(cmos_q),
 	.PER_D(per_d), .PER_OE(per_oe),
 	.SDC_IMG_MOUNTED(sdc_img_mounted), .SDC_IMG_SIZE(sdc_img_size), .SDC_RD(sdc_rd), .SDC_WR(sdc_wr),
 	.SDC_SECTOR(sdc_sector), .SDC_BUSY(sdc_busy), .SDC_DONE(sdc_done), .SDC_ERROR(sdc_error), .SDC_SLOT(sdc_slot),

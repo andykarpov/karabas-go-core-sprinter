@@ -4,7 +4,8 @@
     "visible": true,
     "type": "osd",
     "order": 44,
-    "eeprom_bank": 255,
+    "eeprom_bank": 4,
+    "eeprom_init": "roms/cmos_default.bin",
     "rtc_mode": 0,
     "roms": [
         {
@@ -15,7 +16,7 @@
     "boards": {
         "minig": {
             "link": 2,
-            "build": "26112102",
+            "build": "26112103",
             "bitstream": "karabas_minig.bin"
         }
     },
