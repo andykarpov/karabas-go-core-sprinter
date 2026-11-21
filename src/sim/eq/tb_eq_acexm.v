@@ -8,7 +8,8 @@
 // the end of the run. Debug: vvp -n build/tb_eq_acexm.vvp +scen=N [+stop] [+dbg=<ns>]
 //
 // sp_acex (the whole ACEX: top + DCP, VIDEO2, ACCELER, AY, KBD, MOUSE) against the netlist of BASE_303.TDF (3.03a);
-// -DK30: PERS_K30 = 1 against the k30 netlist (SP2_ACEX), as tb_eq_acex.v.
+// -DK30: PERS_K30 = 1 against the k30 netlist (SP2_ACEX), as tb_eq_acex.v; -DSCROLL: PERS_SCROLL = 1 against the
+// SCROLL netlist (top SCROLL), our DCP with the SCROLL MIF (MIF_DCP_HEX), as tb_eq_acex.v.
 // CLK = 84 MHz, clk42 toggles at every CLK edge and is the reference's TG42; CE = ~clk42 (CLK42 rises at our CE edge),
 // CE_N = clk42. One set of models around both, driven by the reference's pins only:
 // - Z80 bus model on the reference CLKZ1 (21 / 3.5 MHz), sampling its /WAIT: M1 with refresh, memory read / write,
@@ -88,7 +89,12 @@ module tb_eq_acexm;
 	wire cwh_r = 1'b0;                                 // no CAS_WRITE_HOLD in k30
 	localparam TB_NAME = "k30 SP2_ACEX";
 `else
-	BASE_303 ref(.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
+`ifdef SCROLL
+	SCROLL ref(
+`else
+	BASE_303 ref(
+`endif
+		.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
 		.\/IO (io_n), .\/WR (wr_n), .\/RD (rd_n), .\/MR (mr_n), .\/HALT (1'b1), .A(a), .D(d), .CS_ROM(cs_rom_r),
 		.CS_CASH(cs_cash_r), .RA(ra_r), .V_CS(v_cs_r), .VA(va_r), .V_WR(v_wr_r), .VD3(vd3), .VD2(vd2), .VD1(vd1),
 		.VD0(vd0), .WR_COL(wr_col_r), .DAC_DATA(dac_data_r), .DAC_WS(dac_ws_r), .DAC_BCK(dac_bck_r), .MD(md),
@@ -99,8 +105,13 @@ module tb_eq_acexm;
 	wire md_oe_r = ref.\MD[0]~output .oe;
 	wire res_oe_r = ~ref.\/RESET~output .i;          // open drain
 	wire wait_oe_r = ref.\/WAIT~output .oe;
+`ifdef SCROLL
+	wire cwh_r = 1'b0;                                 // no CAS_WRITE_HOLD in SCROLL
+	localparam TB_NAME = "SCROLL";
+`else
 	wire cwh_r = ref.CAS_WRITE_HOLD.q;
 	localparam TB_NAME = "3.03a BASE_303";
+`endif
 `endif
 	wire [3:0] vd_oe_r = {ref.\VD3[0]~output .oe, ref.\VD2[0]~output .oe, ref.\VD1[0]~output .oe, ref.\VD0[0]~output .oe};
 	wire xa_oe_r = ref.\XA[2]~output .oe;
@@ -111,8 +122,11 @@ module tb_eq_acexm;
 	wire [3:0] ra_o, v_wr_o, cas_o, vd_oe_o; wire [1:0] v_cs_o, ras_o; wire [15:0] va_o, md_o; wire [14:0] ma_o;
 	wire [7:0] d_o, vd0_o, vd1_o, vd2_o, vd3_o; wire [2:0] xa_o;
 	wire [2:0] ct_ph; wire [17:1] va_nx, va_atr; wire [3:0] v_wr_nx; wire [15:0] va_mod; wire [1:0] mca_o;
-	wire mode_rq, mlo_rq, atr_zx, pix_rq, sel_rom, sel_cash;
-	sp_acex #(.MIF_DCP("../../rtl/acex/mif/dcp.hex"), .MIF_AY("../../rtl/acex/mif/ay.hex"),
+	wire mode_rq, mlo_rq, atr_zx, pix_rq, mode_fix, sel_rom, sel_cash;
+`ifndef MIF_DCP_HEX
+`define MIF_DCP_HEX "../../rtl/acex/mif/dcp.hex"
+`endif
+	sp_acex #(.MIF_DCP(`MIF_DCP_HEX), .MIF_AY("../../rtl/acex/mif/ay.hex"),
 		.MIF_KBD("../../rtl/acex/mif/kbd_ini2.hex")) dut(.CLK(clk), .CE(ce), .CE_N(ce_n),
 		.M1_N(m1_n), .RF_N(rf_n), .IO_N(io_n), .WR_N(wr_n), .RD_N(rd_n), .MR_N(mr_n),
 		.M1_N_NX(m1_nx), .RF_N_NX(rf_nx), .IO_N_NX(io_nx), .WR_N_NX(wr_nx), .RD_N_NX(rd_nx), .MR_N_NX(mr_nx),
@@ -124,7 +138,8 @@ module tb_eq_acexm;
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
 		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o),
 		.CT_PH(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq),
-		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V));
+		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MODE_FIX(mode_fix), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V),
+		.PERS_SCROLL(`PERS_SCROLL_V));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	// D / MD compared where the ACEX drives them (the memories answer at other times than the ideal models)
@@ -654,6 +669,9 @@ module tb_eq_acexm;
 			mrd(16'h0123); mrd(16'h4000); mwr(16'h4001, 8'h11); mrd(16'h8000); mwr(16'h8002, 8'h22);
 			mrd(16'hC000); mwr(16'hC003, 8'h33);
 			mwr(16'h4800, 8'h44); mwr(16'h5A00, 8'h55);    // ZX screen / attributes: copied to the video RAM
+			// the copy by ALL_MODE0 = 0 (3.03a, k30) / ALL_MODE3 = 1 (SCROLL)
+			iow(P_ALLM, 8'h08); mwr(16'h4802, 8'h77); mwr(16'h5A01, 8'h88);
+			iow(P_ALLM, 8'h09); mwr(16'h4803, 8'h99); mwr(16'h5A02, 8'hAA); iow(P_ALLM, 8'h00);
 			iow(P_PN, 8'h07); mrd(16'hC100); mwr(16'hC101, 8'h66); iow(P_PN, 8'h08); mwr(16'hC000, 8'h12);
 			iow(P_SC, 8'h01); mrd(16'h0200); iow(P_SC, 8'h00);
 			// DOS: an M1 at 3Dxx with PN4 (BASIC 48 ROM) turns it on, any M1 above 3FFF off

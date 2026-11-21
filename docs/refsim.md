@@ -13,7 +13,8 @@ src/sim/ahdl/build_ref.sh [SRC] [TOP] [NAME]   # по умолчанию ACEX SP
 | `ACEX`, `MAX` | `upstream/sprinter-hard/MaxPlus2/{ACEX,MAX}` (2.18 Peters Plus) | `SP2_ACEX`, `SP2_MAX` |
 | `303A` | `upstream/tt-sp2000-acex` (3.03a, основа перевода) | `BASE_303` |
 | `K30` | `upstream/tt-sprinter-bios` @ 085ef3c `src/altera/acex/k30` (BIOS 3.05+) | `SP2_ACEX` (NAME `K30`) |
-| `SCROLL` | `upstream/tt-scroll-cnf/src` (конфигурация игры) | `SCROLL` |
+| `SCROLL` | `upstream/tt-scroll-cnf/src` (конфигурация игры, R75 @ 0edb583) | `SCROLL` |
+| абсолютный путь к `upstream/tt-scroll-cnf/src` | подмодули SCROLL: `… DCP DCPSCR`, `… VIDEO2 VIDSCR` (`run_eq.sh dcp_scroll` / `video2_scroll` собирают сами) | `DCP`, `VIDEO2` |
 | `build/src_k30/src/altera/acex/k30` (после `K30`) | подмодули k30: `build_ref.sh <каталог> DCP DCPK30`, `… VIDEO2 VIDK30` (`run_eq.sh dcp_k30` / `video2_k30` собирают сами) | `DCP`, `VIDEO2` |
 | каталог | любой каталог с `.TDF` / `.INC` / `.MIF` | — |
 
@@ -36,7 +37,9 @@ src/sim/ahdl/build_ref.sh [SRC] [TOP] [NAME]   # по умолчанию ACEX SP
 | SP2_MAX | 104 | 56 | 0 |
 | BASE_303 (3.03a) | 1 436 | | |
 | K30 | 1 426 | | |
-| SCROLL | 1 190 | | |
+| SCROLL | 1 190 | 786 | 12 032 |
+| DCPSCR (DCP SCROLL) | 207 | 115 | 4 096 |
+| VIDSCR (VIDEO2 SCROLL) | 342 | 269 | 0 |
 
 (В ACEX у оригинала 1 569 LE: другая технология и упаковка; у Cyclone IV 4-входовые LUT те же, порядок величины совпадает.)
 

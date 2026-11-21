@@ -43,6 +43,13 @@
 // - Asynchronous clrn / prn: effective values (*_e); CT5 / CTH / CTV forced by COPY_SINC_H / _V, DCOL by BLANK, RBRVA
 //   by BORD, MXWE by E_WR (clear) and V_WE (preset, after the edge). CTF counts the rise of the effective CTV8: COPY_SINC_V (preset of CTV8) makes it rise while the input is high, so CTF = register + that
 //   pending rise (combinational, as the ripple counter in the original).
+// - karabas: personality SCROLL (PERS_SCROLL = 1; VIDEO2.TDF of upstream/tt-scroll-cnf/src, the Game Config of Ivan Mak
+//   2002, docs/versions.md): the screen is a grid of 8 x 8 cells shifted by SHIFT_X / SHIFT_Y (0..15, MODE3 = byte 0
+//   of the mode word, taken at the end of a cell when MODE02); each cell's word gives the source byte X =
+//   (MODE0[1..0], MODE1) and line Y = MODE2 in a 1024 x 256 picture. Lines marked "SCROLL:": GRID_X / GRID_Y, SHIFT,
+//   MODE3, SVA (no ZX branch), the mode slot address and WR_MODE by GRID_X, LD_PIC by GRID_X, INTT = the fall of
+//   INTTX at CT5 (INTTX_N_DELAY), DCOL border by BORD; the early outputs VA_MOD / MODE_RQ / MLO_RQ / PIX_RQ follow
+//   GRID_X, ATR_ZX = 0. PERS_SCROLL = 0 is 3.03a bit for bit; it changes only while CFG_RST is high.
 module sp_video2 (
 	input             CLK,
 	input             CE,          // CLK42 rising edge
@@ -90,9 +97,13 @@ module sp_video2 (
 	output     [17:1] VA_ATR,      // the ZX attribute address of this cycle (valid when ATR_ZX, from c1)
 	output            ATR_ZX,      // MODE0[4]: ZX screen (the attribute address does not depend on CT)
 	output            PIX_RQ,      // D_PIC0 takes the pixel byte at c8 of this cycle and it can be seen (from c1)
+	output            MODE_FIX,    // SCROLL: COPY_SINC_H / _V moves the grid of this cycle's mode slot (c3..c8): the mode
+	                               // table halves fetched before must be fetched again (VA_MOD is the moved address now)
 	input             CFG_RST,     // karabas: configuration reset: registers to power-up (docs/machine.md); only in if ()
-	input             PERS_K30     // karabas: personality k30 (docs/versions.md): WR_PIC.d = MODE0[5] in the mode slot
+	input             PERS_K30,    // karabas: personality k30 (docs/versions.md): WR_PIC.d = MODE0[5] in the mode slot
 	                               // (k30 VIDEO2.TDF:467, "fix bug with first column"), 0 = 3.03a X_MODE5
+	input             PERS_SCROLL  // karabas: personality SCROLL (Game Config of Thunder in the Deep, docs/versions.md):
+	                               // the character grid with X / Y offsets ("SCROLL:" below), 0 = 3.03a. Not with PERS_K30
 );
 	// ================= sync counters CT / CTH / CTV / CTF
 	reg  [5:0] ct_q = 6'd0;
@@ -146,9 +157,11 @@ module sp_video2 (
 
 	// ================= mode table, pixels, colours
 	reg  [7:0] mode0 = 8'd0, mode1 = 8'd0, mode2 = 8'd0;
+	reg  [7:0] mode3 = 8'd0;                         // SCROLL: MODE3 = VDM0 (byte 0 of the mode word): SHIFT_Y, SHIFT_X
 	reg        wr_pic = 1'b0, wr_col = 1'b0, wr_mode = 1'b0, tsn_w3 = 1'b0;
 	reg        lwr_pic = 1'b0, lwr_col = 1'b0;
 	reg        bord = 1'b0, blank = 1'b0, inttx = 1'b0, wide = 1'b0, bordp = 1'b0, intt = 1'b0;
+	reg        inttx_nd = 1'b0;                      // SCROLL: INTTX_N_DELAY = DFF(!INTTX, CT5)
 	reg  [7:4] x_mode = 4'd0;
 	reg [17:0] vla = 18'd0, sva = 18'd0;
 	reg  [1:0] vla_d = 2'd0;                         // DFF(VLA1), DFF(VLA0)
@@ -165,6 +178,27 @@ module sp_video2 (
 		2'd0: dpicx = dp0_; 2'd1: dpicx = dp1_; 2'd2: dpicx = dp2_; default: dpicx = dp3_;
 	endcase
 
+	// ================= SCROLL (VIDEO2.TDF of upstream/tt-scroll-cnf/src): the character grid shifted by SHIFT_X / Y
+	// GRID_X = (CTH, CT[5..3]) + SHIFT_X on CLK42, the low 3 bits only with the CT[5..3] enable (PIX_ENA = ct53_en);
+	// GRID_Y = CTV + SHIFT_Y on CLK42. SHIFT_X / Y = MODE3 at the rise of SHIFT_CLK = DFF(DFF(!(VCM = 3 & CT[5..3] = 7)))
+	// when MODE02 (both derived registers of the same wave: the old MODE0 / MODE3).
+	reg  [8:0] grid_x = 9'd0, grid_y = 9'd0;
+	reg  [3:0] shift_x = 4'd0, shift_y = 4'd0;
+	reg        shift_clk0 = 1'b0, shift_clk = 1'b0;
+	wire       shift_ev = ~shift_clk & shift_clk0 & mode0[2];       // SCROLL: SHIFT_X / Y clock and enable
+	wire [8:0] gx_s = {cth_e, ct_e[5:3]} + {5'd0, shift_x};
+	wire [8:0] gy_s = ctv_e + {5'd0, shift_y};
+	// the source byte of the cell: X = (MODE0[1..0], MODE1) + GRID_X[2..0], Y = MODE2 + GRID_Y[2..0]
+	wire [9:0] src_x = {mode0[1:0], mode1} + {7'd0, grid_x[2:0]};
+	wire [7:0] src_y = mode2 + {5'd0, grid_y[2:0]};
+	wire       scr_wr_mode = ~(grid_x[2:0] == 3'b111) & ~(grid_x[1] & grid_x[0] & ~mode0[5]);   // SCROLL: WR_MODE.d
+	wire [17:0] va_mode = PERS_SCROLL ? {DIR_PORT[3], grid_x[8:2], 2'b11, grid_y[8:3], 2'b00}    // SCROLL: mode slot
+	                                  : {DIR_PORT[3], cth_e, ct_e[5], 2'b11, ctv_e[8:3], 2'b00};
+	wire       ldp_a_d = PERS_SCROLL ? grid_x[2:0] == 3'd0 : ct_e[5:3] == 3'd0;            // SCROLL: LD_PIC terms
+	wire       ldp_b_d = PERS_SCROLL ? (grid_x[1:0] == 2'd0) & ~ct_e[2] : ct_e[4:2] == 3'd0;
+	wire       bord_col = PERS_SCROLL ? bord : bordp;    // SCROLL: the DCOL border mux by BORD (3.03a: DFF(.., WR_PIC))
+	wire       intt_d = PERS_SCROLL ? inttx_nd | inttx : ~(inttx & (ctv_n[2:0] == 3'd7));   // SCROLL: INTT
+
 	reg [17:0] vla_n;
 	reg        wr_pic_d, wr_col_d, wr_mode_d;
 	wire       wr_pic_x = PERS_K30 ? mode0[5] : x_mode[5];   // WR_PIC.d of the mode slot (K30: MODE0[5])
@@ -175,9 +209,9 @@ module sp_video2 (
 			2'd1: begin vla_n = sva; wr_pic_d = ~vcm[2]; wr_col_d = vcm[2]; end
 			2'd2: vla_n = vxa[17:0];
 			default: begin
-				vla_n = {DIR_PORT[3], cth_e, ct_e[5], 2'b11, ctv_e[8:3], 2'b00};
+				vla_n = va_mode;
 				wr_pic_d = wr_pic_x;
-				wr_mode_d = ~(ct_e[5:3] == 3'b111) & ~(ct_e[4] & ct_e[3] & ~mode0[5]);
+				wr_mode_d = PERS_SCROLL ? scr_wr_mode : ~(ct_e[5:3] == 3'b111) & ~(ct_e[4] & ct_e[3] & ~mode0[5]);
 			end
 		endcase
 	end
@@ -197,6 +231,9 @@ module sp_video2 (
 		end
 	end
 
+	// SCROLL: SVA = (SOURCE_Y, SOURCE_X[9..2], !SOURCE_X[1..0]) (no ZX branch)
+	wire [17:0] sva_d = PERS_SCROLL ? {src_y, src_x[9:2], ~src_x[1:0]} : {sva_hi, rsva[8:6], mode0[3:0], rsva[5:0]};
+
 	wire wr_mode_rise = ~wr_mode & wr_mode_d;       // MODE0..2 clock (LWR_MODE)
 	wire lwr_col_rise = ~lwr_col & wr_col;          // BORD, BLANK, INTTX, X_MODE, width clock
 	wire wr_pic_rise  = ~wr_pic & wr_pic_d;         // clock of the DCOL border flag
@@ -211,8 +248,10 @@ module sp_video2 (
 			cth_en  <= (ct_e[5:2] == 4'hF) & ct_e[0];
 			ctv_en  <= (ct_e[5:2] == 4'hF) & ct_e[0] & (cth_e == 6'd48);
 			ctf_q   <= ctf_q + {6'd0, ctf_pend} + {6'd0, ctf_edge};
-			if (ct5_rise)
-				intt <= ~(inttx & (ctv_n[2:0] == 3'd7));
+			if (ct5_rise) begin
+				intt <= intt_d;
+				inttx_nd <= ~inttx;
+			end
 			vcm <= vcm_n;
 
 			// write path
@@ -226,7 +265,7 @@ module sp_video2 (
 
 			// slots
 			vla      <= vla_n;
-			sva      <= {sva_hi, rsva[8:6], mode0[3:0], rsva[5:0]};
+			sva      <= sva_d;
 			wr_pic   <= wr_pic_d;
 			wr_col   <= wr_col_d;
 			wr_mode  <= wr_mode_d;
@@ -234,18 +273,25 @@ module sp_video2 (
 			lwr_pic  <= wr_pic;
 			lwr_col  <= wr_col;
 			vla_d    <= vla[1:0];
-			ldp_a    <= ct_e[5:3] == 3'd0;
-			ldp_b    <= ct_e[4:2] == 3'd0;
+			ldp_a    <= ldp_a_d;
+			ldp_b    <= ldp_b_d;
+			// SCROLL grid
+			grid_x[8:3] <= gx_s[8:3];
+			if (ct53_en) grid_x[2:0] <= gx_s[2:0];
+			grid_y      <= gy_s;
+			shift_clk0  <= ~((vcm[1:0] == 2'd3) & (ct_e[5:3] == 3'd7));
+			shift_clk   <= shift_clk0;
+			if (shift_ev) begin shift_y <= mode3[7:4]; shift_x <= mode3[3:0]; end
 
 			// pixels, colours
 			if (!lwr_pic)
 				d_pic0 <= ld_pic ? dpicx : {d_pic0[6:0], 1'b0};
-			dcol  <= blank ? 8'd0 : (!lwr_col ? (bordp ? {2'b00, DIR_PORT[7:5], DIR_PORT[7:5]} : dpicx) : dcol);
+			dcol  <= blank ? 8'd0 : (!lwr_col ? (bord_col ? {2'b00, DIR_PORT[7:5], DIR_PORT[7:5]} : dpicx) : dcol);
 			brva  <= wide ? dcol_e : (ct_e[2] ? {4'h0, dcol_e[7:4]} : {4'h0, dcol_e[3:0]});
 			rbrva <= bord ? 3'b100 : (x_mode[4] ? {1'b1, ctf_e[4] & ~blank, d_pic0[7]} : {1'b0, x_mode[7:6]});
 
 			// derived clocks
-			if (wr_mode_rise) begin mode0 <= VDM3; mode1 <= VDM2; mode2 <= VDM1; end
+			if (wr_mode_rise) begin mode0 <= VDM3; mode1 <= VDM2; mode2 <= VDM1; mode3 <= VDM0; end
 			if (lwr_col_rise) begin
 				bord   <= mode0[7:4] == 4'hF;
 				blank  <= (bord & mode0[3] & mode0[2]) | DIR_PORT[4];
@@ -268,6 +314,8 @@ module sp_video2 (
 			lwr_col <= 1'b0; bord <= 1'b0; blank <= 1'b0; inttx <= 1'b0; wide <= 1'b0; bordp <= 1'b0; intt <= 1'b0;
 			x_mode <= 4'd0; vla <= 18'd0; sva <= 18'd0; vla_d <= 2'd0; ldp_a <= 1'b0; ldp_b <= 1'b0; dp0_ <= 8'd0;
 			dp1_ <= 8'd0; dp2_ <= 8'd0; dp3_ <= 8'd0; d_pic0 <= 8'd0; dcol <= 8'd0; brva <= 8'd0; rbrva <= 3'd0;
+			mode3 <= 8'd0; inttx_nd <= 1'b0; grid_x <= 9'd0; grid_y <= 9'd0; shift_x <= 4'd0; shift_y <= 4'd0;
+			shift_clk0 <= 1'b0; shift_clk <= 1'b0;
 		end
 	end
 
@@ -288,17 +336,52 @@ module sp_video2 (
 	assign WR_PIX = tsn_w3;
 	assign CT_NX   = ct_n;
 	assign CTH_NX  = cth_n;
-	assign INTT_NX = ct5_rise ? ~(inttx & (ctv_n[2:0] == 3'd7)) : intt;
+	assign INTT_NX = ct5_rise ? intt_d : intt;
 	// early signals (outputs only: nothing above uses them)
 	assign VA_NX   = vla_n[17:1];
 	assign V_WR_NX = {4{mxwe_b}} | v_en_d;      // = {4{v_we_d}} | v_en_d in the write slot (vcm = 2, c11)
-	assign VA_MOD  = {DIR_PORT[3], cth_e, ct_e[5], 2'b11, ctv_e[8:3]};
-	assign MODE_RQ = (ct_n[5:3] == 3'd7) | ((ct_n[5:3] == 3'd3) & ~mode0[5]);
-	assign MLO_RQ  = mode0[5] & (ct_n[5:3] == 3'd0);
+	// SCROLL: the grid as the mode slot (c10) and the pixel / colour slots of this cycle will see it, as registers (no
+	// adder before the SRAM arbiter: PAR). GRID_X[2..0] is loaded at c2 (with CT[5..3]) and then held: gxl_q holds,
+	// from c0, the value it has after c2 (at the CE before CT[5..3] is enabled: the next CT[5..3] + SHIFT_X; else
+	// the next GRID_X[2..0]). GRID_X[8..3] / GRID_Y follow CTH / CT / CTV / SHIFT one CE later, and those change at
+	// c2: vmod_q = the grid after the next CE (from the next counter values), final from c3, so MODE_RQ waits for c3
+	// (no mode half in [1,3]; the slot plan still fits, docs/versions.md).
+	wire [2:0] gxl_n = ct53_en ? gx_s[2:0] : grid_x[2:0];
+	wire [3:0] shx_n = shift_ev ? mode3[3:0] : shift_x;
+	wire [3:0] shy_n = shift_ev ? mode3[7:4] : shift_y;
+	wire [8:0] gx_n  = {cth_n, ct_n[5:3]} + {5'd0, shx_n};
+	wire [8:0] gy_n  = ctv_n + {5'd0, shy_n};
+	reg [14:0] vmod_q = 15'd0;
+	reg  [2:0] gxl_q = 3'd0;
+	// a sync jump in the middle of a cycle (COPY_SINC_H forces CTH = 50, CT5 = 0; COPY_SINC_V CTV = 290) moves GRID_X[8..3]
+	// / GRID_Y one CE later, vmod_q one CE later still: the grid after a jump, registered from the next CT[4..3] / SHIFT
+	reg  [5:0] vj_x = 6'd0, vj_y = 6'd0;
+	wire [8:0] vj_xs = {6'd50, 1'b0, ct_n[4:3]} + {5'd0, shx_n};
+	wire [8:0] vj_ys = 9'd290 + {5'd0, shy_n};
+	always @(posedge CLK) begin
+		if (CE) begin
+			vmod_q <= {gx_n[8:3], gxl_n[2], 2'b11, gy_n[8:3]};
+			gxl_q  <= (ct_e[0] & ct_e[2]) ? ct_n[5:3] + shx_n[2:0] : gxl_n;
+			vj_x   <= vj_xs[8:3];
+			vj_y   <= vj_ys[8:3];
+		end
+		if (CFG_RST) begin vmod_q <= 15'd0; gxl_q <= 3'd0; vj_x <= 6'd0; vj_y <= 6'd0; end
+	end
+	// the jump reaches the mode slot (c10) when COPY_SINC is high at c3..c8 (CT[2..0] = 0, 1, 2); at c1..c2 vmod_q has it
+	// already, from c9 on the slot address is taken (GRID before c10)
+	wire       j_mid = PERS_SCROLL & ((ct_e[2:0] == 3'd0) | (ct_e[2:0] == 3'd1) | (ct_e[2:0] == 3'd2));
+	wire       j_h   = j_mid & COPY_SINC_H, j_v = j_mid & COPY_SINC_V;
+	wire [2:0] cx_n  = PERS_SCROLL ? gxl_q : ct_n[5:3];              // the cell column of this cycle
+	wire       m_c1  = PERS_SCROLL & (ct_e[2:0] == 3'd6);             // SCROLL: c1 (VA_MOD not final yet)
+	assign VA_MOD  = PERS_SCROLL ? {DIR_PORT[3], j_h ? vj_x : vmod_q[14:9], vmod_q[8:6], j_v ? vj_y : vmod_q[5:0]}
+	                             : {DIR_PORT[3], cth_e, ct_e[5], 2'b11, ctv_e[8:3]};
+	assign MODE_FIX = j_h | j_v;
+	assign MODE_RQ = ((cx_n == 3'd7) | ((cx_n == 3'd3) & ~mode0[5])) & ~m_c1;
+	assign MLO_RQ  = mode0[5] & (cx_n == 3'd0);
 	assign VA_ATR  = {mode2[7:3], mode2[2:0], mode0[3:0], DIR_PORT[0], 3'b110, ~mode0[7]};   // [0] = ~mode0[6] dropped
-	assign ATR_ZX  = mode0[4];
+	assign ATR_ZX  = mode0[4] & ~PERS_SCROLL;                         // SCROLL: no ZX address, the colour by VA_NX
 	// the byte is also seen when a 16-colour graphics cell (no load at its cycle 4 for a next cell with MODE0[5] = 1)
 	// is followed by a ZX / text half-cell: D_PIC0 is not reloaded there and shifts the byte of cycle 0 out
-	assign PIX_RQ  = (mode0[5] ? (ct_n[5:3] == 3'd0) : (ct_n[4:3] == 2'd0)) &
-	                 (mode0[4] | x_mode[4] | (~mode0[5] & (ct_n[5:3] == 3'd0)));
+	assign PIX_RQ  = (mode0[5] ? (cx_n == 3'd0) : (cx_n[1:0] == 2'd0)) &
+	                 (mode0[4] | x_mode[4] | (~mode0[5] & (cx_n == 3'd0)));
 endmodule

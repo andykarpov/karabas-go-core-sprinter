@@ -79,7 +79,7 @@
 
 | Программа | Хеш | Исходник | Эмуляторы | Объём у нас | Рекомендация |
 |---|---|---|---|---|---|
-| Thunder in the Deep, `GAME_00`, `LDCONF gc.bin` | `3861cfa4` | AHDL (tt-scroll-cnf) | MAME (неполно), unreal-ng (Game) | отличия от 3.03a по исходникам: VIDEO2 ~100 строк diff (сетка, сдвиг, MODE3), DCP 11, ACCELER 3, `DCP.MIF` `EE`; минус AY и мышь. Это ~1 тыс. LUT второй личностью (`PLAN.md`), в основном VIDEO2 | **переводить из AHDL** (план Ф3), сверять с эталоном `refsim` (SCROLL уже идёт в iverilog) и с unreal-ng |
+| Thunder in the Deep, `GAME_00`, `LDCONF gc.bin` | `3861cfa4` | AHDL (tt-scroll-cnf) | MAME (неполно), unreal-ng (Game) | отличия от 3.03a по исходникам: VIDEO2 ~100 строк diff (сетка, сдвиг, MODE3), DCP 11, ACCELER 3, `DCP.MIF` `EE`; минус AY и мышь. Это ~1 тыс. LUT второй личностью (`PLAN.md`), в основном VIDEO2 | **переводить из AHDL** (план Ф3), сверять с эталоном `refsim` (SCROLL уже идёт в iverilog) и с unreal-ng. Сделано 2026-11-21 (`docs/versions.md`): по функции DCP и ACCELER — как в 3.03a, отличаются верх, VIDEO2 и слово `EE` `DCP.MIF`; цена +161 LUT / +64 FF |
 | DOOM, MORTAL (Sp97) | — | — | — | 0: всё есть в стандартной (ALT_ACC, CBL) | **не делать**; проверить, что путь BIOS `#F3` «crutch» работает (ID в `C090`) |
 | DOOM 2 demo, MK_DEMO, MK3 | стандартный | — | — | 0 | не нужно, тест стандартной прошивки (ALT_ACC, CBL) |
 | `LDCONF stream.30x` | `d0953276`, `b051ab62`, `78eddfc6`, `b152a961` | AHDL 3.03a | — | 0 | добавить в список «стандартная» (чтобы не было сообщения OSD «неизвестный поток»); `b152a961` тоже, а хеш k30 из ROM 3.05 / 3.06 — после проверки на стенде (`5aa954b6` или `383a0f9f`) |

@@ -62,7 +62,7 @@ module tb_cfg_rst;
 		.VD2_O(vd2_o_r), .VD3_O(vd3_o_r), .VD_OE(vd_oe_r), .WR_COL(wr_col_r), .DAC_DATA(dac_data_r), .DAC_WS(dac_ws_r),
 		.DAC_BCK(dac_bck_r), .MD_I(md), .MD_O(md_o_r), .MD_OE(md_oe_r), .MA(ma_r), .RAS_(ras_r), .CAS_(cas_r),
 		.WE_N(we_r), .XACS(xacs_r), .XA_I(xa), .XA_O(xa_o_r), .XA_OE(xa_oe_r), .XA3(xa3), .SXA(sxa_r),
-		.RDXA(rdxa_r), .WR_AWG(wr_awg_r), .RD_KMPS(rd_kmps_r), .WR_DWG(wr_dwg_r), .CFG_RST(1'b0), .CFG_DONE(), .PERS_K30(`PERS_K30_V));
+		.RDXA(rdxa_r), .WR_AWG(wr_awg_r), .RD_KMPS(rd_kmps_r), .WR_DWG(wr_dwg_r), .CFG_RST(1'b0), .CFG_DONE(), .PERS_K30(`PERS_K30_V), .PERS_SCROLL(`PERS_SCROLL_V));
 	assign d = d_oe_r ? d_o_r : 8'bz;
 	assign md = md_oe_r ? md_o_r : 16'hzzzz;
 	assign vd0 = vd_oe_r[0] ? vd0_o_r : 8'bz; assign vd1 = vd_oe_r[1] ? vd1_o_r : 8'bz;
@@ -88,7 +88,7 @@ module tb_cfg_rst;
 		.DAC_BCK(dac_bck_o), .MD_I(md), .MD_O(md_o), .MD_OE(md_oe_o), .MA(ma_o), .RAS_(ras_o), .CAS_(cas_o),
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
 		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o), .CFG_RST(cfg_rst),
-		.CFG_DONE(cfg_done), .PERS_K30(`PERS_K30_V));
+		.CFG_DONE(cfg_done), .PERS_K30(`PERS_K30_V), .PERS_SCROLL(`PERS_SCROLL_V));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	wire [7:0] d_pin_o = d_oe_o ? d_o : d;

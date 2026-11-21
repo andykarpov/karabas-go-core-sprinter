@@ -19,7 +19,7 @@
 	reg ld_req = 0; reg [20:0] ld_a = 0; reg [1:0] ld_be = 0; reg [15:0] ld_d = 0; wire ld_ack;
 	wire [20:0] sr_a; wire [15:0] sr_do, sr_dt, sr_di; wire [1:0] sr_we, sr_oe;
 	sp_sram #(.SIM_X(1)) u_sram(.CLK(clk), .CE(ce), .CE_N(ce_n), .CT(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx),
-		.VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq),
+		.VA_MOD(va_mod), .MODE_RQ(mode_rq), .MODE_FIX(mode_fix), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq),
 		.VD0_O(vd0_o), .VD1_O(vd1_o), .VD2_O(vd2_o), .VD3_O(vd3_o), .VA(va_o), .VD0_I(vd0_u), .VD1_I(vd1_u),
 		.VD2_I(vd2_u), .VD3_I(vd3_u), .PAL_Q(pal_q), .A(a), .RA(ra_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash),
 		.RF_N(rf_n), .MR_N(mr_n), .WR_N(wr_n), .CS_CASH(cs_cash_o), .CPU_D(d_u), .CPU_FLUSH(cpu_flush),
@@ -151,12 +151,13 @@
 	always @(posedge clk) begin
 		if (ce_n) rdp <= {vd3, vd2, vd1, vd0};
 		if (cmp_on) begin
-			// MODE0..2 take VDM3..1 at the rise of WR_MODE: what the reference bus has there
+			// MODE0..2 take VDM3..1 at the rise of WR_MODE: what the reference bus has there (SCROLL: MODE3 = VDM0 too)
 			if (ce && dut.SVIDEO.wr_mode_rise) begin
 				n_cm = n_cm + 1;
-				if ({dut.vd3, dut.vd2, dut.vd1} !== {vd3, vd2, vd1}) begin
+				if ({dut.vd3, dut.vd2, dut.vd1} !== {vd3, vd2, vd1} || (`PERS_SCROLL_V && dut.vd0 !== vd0)) begin
 					x_cm = x_cm + 1;
-					if (x_cm <= 3) $display("  MODE load at %0d ns: ours %h%h%h ref %h%h%h", $time, dut.vd3, dut.vd2, dut.vd1, vd3, vd2, vd1);
+					if (x_cm <= 3) $display("  MODE load at %0d ns: ours %h%h%h%h ref %h%h%h%h", $time, dut.vd3, dut.vd2, dut.vd1,
+						dut.vd0, vd3, vd2, vd1, vd0);
 				end
 			end
 			// D_PIC0 / DCOL take the byte DFF(VLA[1:0]) of D_PICx_ (the bus at the last CE_N)
@@ -164,8 +165,8 @@
 			// cycle 0 of 16-colour graphics (a ZX / text half-cell with MODE0[5] may follow, docs/memtiming.md 8.3);
 			// otherwise sp_sram does not fetch it, by design: PIX_RQ)
 			if (ce && !dut.SVIDEO.lwr_pic && dut.SVIDEO.ld_pic && !(dut.SVIDEO.mode0[4] | dut.SVIDEO.x_mode[4]) &&
-			    !(!dut.SVIDEO.mode0[5] && dut.SVIDEO.ct_e[5:3] == 3'd0)) n_dps = n_dps + 1;
-			else if (ce && ((!dut.SVIDEO.lwr_pic && dut.SVIDEO.ld_pic) || (!dut.SVIDEO.lwr_col && !dut.SVIDEO.blank && !dut.SVIDEO.bordp))) begin
+			    !(!dut.SVIDEO.mode0[5] && (`PERS_SCROLL_V ? dut.SVIDEO.grid_x[2:0] : dut.SVIDEO.ct_e[5:3]) == 3'd0)) n_dps = n_dps + 1;
+			else if (ce && ((!dut.SVIDEO.lwr_pic && dut.SVIDEO.ld_pic) || (!dut.SVIDEO.lwr_col && !dut.SVIDEO.blank && !dut.SVIDEO.bord_col))) begin
 				n_dp = n_dp + 1;
 				if (dut.SVIDEO.dpicx !== rdp[8 * dut.SVIDEO.vla_d +: 8]) begin
 					x_dp = x_dp + 1;

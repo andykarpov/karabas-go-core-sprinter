@@ -1,4 +1,5 @@
-// sp_video2 against the VIDEO2 netlist of the 3.03a AHDL (MODE = "SPRINTER"). CLK = 84 MHz; clk42 toggles at every
+// sp_video2 against the VIDEO2 netlist of the 3.03a AHDL (MODE = "SPRINTER"; -DK30 / -DSCROLL: the k30 / SCROLL
+// netlist with that personality; +mut / +mut=N: mutations, below). CLK = 84 MHz; clk42 toggles at every
 // posedge of CLK and is the reference's CLK42; our CE = ~clk42 (the edge where CLK42 rises), CE_N = clk42.
 // Stimulus: a video RAM model (64 K words x 4 bytes, read data 3 ns after the address, the bus = VDO while V_WEN is
 // low, bytes written at the rising V_WR of the reference) filled with random pixels / palettes and a structured mode
@@ -42,11 +43,40 @@ module tb_eq_video2;
 		.COPY_SINC_H(csh), .COPY_SINC_V(csv), .WR(wr), .VAI(vai), .MDI(mdi), .DOUBLE_CAS(dbl), .VAO(vao_o),
 		.VDO0(vdo0_o), .VDO1(vdo1_o), .VDO2(vdo2_o), .VDO3(vdo3_o), .VDM0(vdm0), .VDM1(vdm1), .VDM2(vdm2), .VDM3(vdm3),
 		.V_WR(vwr_o), .V_WEN(vwen_o), .V_CS(vcs_o), .WR_PIX(wrpix_o), .ZX_PORT(zx_port), .DIR_PORT(dir_port),
-		.INTT(intt_o), .PERS_K30(`PERS_K30_V));
+		.INTT(intt_o), .PERS_K30(`PERS_K30_V), .PERS_SCROLL(`PERS_SCROLL_V));
 
-	// -DK30 +mut: the k30 WR_PIC data forced back to 3.03a X_MODE5 (must fail)
-	wire m_wrpic = dut.x_mode[5];                    // a plain net: iverilog evaluates another force RHS once
-	initial if ($test$plusargs("mut")) #1 force dut.wr_pic_x = m_wrpic;
+	// mutations (must fail). Plain nets: iverilog evaluates another force RHS once
+	integer mut = 0;
+`ifdef SCROLL
+	// -DSCROLL +mut=N: one SCROLL line forced back to its 3.03a form (1 SVA, 2 mode slot address, 3 WR_MODE, 4 LD_PIC,
+	// 5 INTT, 6 DCOL border by WR_PIC, 7 no SHIFT load)
+	wire [17:0] m_sva = {dut.sva_hi, dut.rsva[8:6], dut.mode0[3:0], dut.rsva[5:0]};
+	wire [17:0] m_vam = {dir_port[3], dut.cth_e, dut.ct_e[5], 2'b11, dut.ctv_e[8:3], 2'b00};
+	wire m_wrm = ~(dut.ct_e[5:3] == 3'b111) & ~(dut.ct_e[4] & dut.ct_e[3] & ~dut.mode0[5]);
+	wire m_lda = dut.ct_e[5:3] == 3'd0, m_ldb = dut.ct_e[4:2] == 3'd0;
+	wire m_intt = ~(dut.inttx & (dut.ctv_n[2:0] == 3'd7));
+	wire m_bord = dut.bordp;
+	wire m_zero = 1'b0;
+	initial begin
+		if (!$value$plusargs("mut=%d", mut)) mut = 0;
+		#1 case (mut)
+			1: force dut.sva_d = m_sva;
+			2: force dut.va_mode = m_vam;
+			3: force dut.scr_wr_mode = m_wrm;
+			4: begin force dut.ldp_a_d = m_lda; force dut.ldp_b_d = m_ldb; end
+			5: force dut.intt_d = m_intt;
+			6: force dut.bord_col = m_bord;
+			7: force dut.shift_ev = m_zero;
+			default: ;
+		endcase
+	end
+`define MUT_NAME (mut ? ", mutation" : "")
+`else
+	// -DK30 +mut: the k30 WR_PIC data forced back to 3.03a X_MODE5
+	wire m_wrpic = dut.x_mode[5];
+	initial if ($test$plusargs("mut")) begin mut = 1; #1 force dut.wr_pic_x = m_wrpic; end
+`define MUT_NAME (mut ? ", mutation WR_PIC" : "")
+`endif
 
 	// ---- video RAM: 64 K x 32 bits (V_CS1 = 1, V_CS0 = 0 constantly: one bank)
 	reg [7:0] ram [0:262143];
@@ -219,7 +249,7 @@ module tb_eq_video2;
 			if (seg < 4) cycles(3 * 2688 - 500);
 			$display("  segment %0d done: ctv %0d ctf %0d writes %0d", seg, ctv_r, ctf_r, nwr);
 		end
-		$display("tb_eq_video2 (%0s VIDEO2 vs sp_video2%0s):", `PERS_NAME, $test$plusargs("mut") ? ", mutation WR_PIC" : "");
+		$display("tb_eq_video2 (%0s VIDEO2 vs sp_video2%0s %0d):", `PERS_NAME, `MUT_NAME, mut);
 		ct_report; cth_report; ctv_report; ctf_report; blank_report; intt_report; vao_report; vdo_report;
 		v_wr_report; v_wen_report; v_cs_report; wr_pix_report;
 		$display("tb_eq_video2: %0d errors%s", errors, weak ? " (some outputs never toggled)" : "");

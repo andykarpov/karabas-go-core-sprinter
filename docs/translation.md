@@ -1,6 +1,6 @@
 # Перевод AHDL → Verilog: правила и проверка (Ф1.1)
 
-Основа — AHDL 3.03a (`upstream/tt-sp2000-acex`); модули в `src/rtl/acex/` (`sp_<модуль>.v`), таблицы MIF → `src/rtl/acex/mif/*.hex` (`tools/mif.py hex`). Отличия версий — `docs/versions.md`; личность k30 (BIOS 3.05 / 3.06) — вход `PERS_K30` у `sp_acex`, `sp_dcp`, `sp_video2`, свои тесты `run_eq.sh *_k30` (`docs/versions.md`).
+Основа — AHDL 3.03a (`upstream/tt-sp2000-acex`); модули в `src/rtl/acex/` (`sp_<модуль>.v`), таблицы MIF → `src/rtl/acex/mif/*.hex` (`tools/mif.py hex`). Отличия версий — `docs/versions.md`; личности k30 (BIOS 3.05 / 3.06) и SCROLL (Game Config, Thunder in the Deep) — входы `PERS_K30` и `PERS_SCROLL` у `sp_acex`, `sp_dcp`, `sp_video2`, свои тесты `run_eq.sh *_k30` и `*_scroll` (`docs/versions.md`). При 0 на обоих — 3.03a бит в бит (XST с входами, привязанными к 0: 2105 LUT / 1239 FF против 2106 / 1238 до SCROLL, `docs/versions.md`).
 
 ## Правила
 

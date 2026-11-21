@@ -21,6 +21,9 @@
 // -DK30: the k30 personality (PERS_K30 = 1) against the k30 netlist (top SP2_ACEX of upstream/tt-sprinter-bios @ 085ef3c,
 //   lower-case port names, XA[3:0] inout). +mut=N (with -DK30): one k30 line forced back to its 3.03a form, the run
 //   must fail (run_eq.sh acex_k30_mut).
+// -DSCROLL: the SCROLL personality (PERS_SCROLL = 1) against the SCROLL netlist (top SCROLL of upstream/tt-scroll-cnf/src,
+//   the port names of BASE_303); ours with the SCROLL DCP.MIF (MIF_DCP_HEX: MEM[EE] = 2041; the reload that writes it is
+//   tested by dcp_scroll). +mut=N: one SCROLL line forced back to 3.03a (run_eq.sh acex_scroll_mut).
 `timescale 1ns/1ps
 `include "eq_cmp.vh"
 module tb_eq_acex;
@@ -83,7 +86,12 @@ module tb_eq_acex;
 	wire cwh_r = 1'b0;                                 // no CAS_WRITE_HOLD in k30
 	localparam TB_NAME = "k30 SP2_ACEX";
 `else
-	BASE_303 ref(.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
+`ifdef SCROLL
+	SCROLL ref(
+`else
+	BASE_303 ref(
+`endif
+		.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
 		.\/IO (io_n), .\/WR (wr_n), .\/RD (rd_n), .\/MR (mr_n), .\/HALT (1'b1), .A(a), .D(d), .CS_ROM(cs_rom_r),
 		.CS_CASH(cs_cash_r), .RA(ra_r), .V_CS(v_cs_r), .VA(va_r), .V_WR(v_wr_r), .VD3(vd3), .VD2(vd2), .VD1(vd1),
 		.VD0(vd0), .WR_COL(wr_col_r), .DAC_DATA(dac_data_r), .DAC_WS(dac_ws_r), .DAC_BCK(dac_bck_r), .MD(md),
@@ -94,8 +102,13 @@ module tb_eq_acex;
 	wire md_oe_r = ref.\MD[0]~output .oe;
 	wire res_oe_r = ~ref.\/RESET~output .i;          // open drain
 	wire wait_oe_r = ref.\/WAIT~output .oe;
+`ifdef SCROLL
+	wire cwh_r = 1'b0;                                 // no CAS_WRITE_HOLD in SCROLL
+	localparam TB_NAME = "SCROLL";
+`else
 	wire cwh_r = ref.CAS_WRITE_HOLD.q;
 	localparam TB_NAME = "3.03a BASE_303";
+`endif
 `endif
 	wire [3:0] vd_oe_r = {ref.\VD3[0]~output .oe, ref.\VD2[0]~output .oe, ref.\VD1[0]~output .oe, ref.\VD0[0]~output .oe};
 	wire xa_oe_r = ref.\XA[2]~output .oe;
@@ -105,7 +118,10 @@ module tb_eq_acex;
 	wire sxa_o, rdxa_o, wr_awg_o, rd_kmps_o, wr_dwg_o, d_oe_o, md_oe_o, xa_oe_o;
 	wire [3:0] ra_o, v_wr_o, cas_o, vd_oe_o; wire [1:0] v_cs_o, ras_o; wire [15:0] va_o, md_o; wire [14:0] ma_o;
 	wire [7:0] d_o, vd0_o, vd1_o, vd2_o, vd3_o; wire [2:0] xa_o;
-	sp_acex #(.MIF_DCP("../../rtl/acex/mif/dcp.hex"), .MIF_AY("../../rtl/acex/mif/ay.hex"),
+`ifndef MIF_DCP_HEX
+`define MIF_DCP_HEX "../../rtl/acex/mif/dcp.hex"
+`endif
+	sp_acex #(.MIF_DCP(`MIF_DCP_HEX), .MIF_AY("../../rtl/acex/mif/ay.hex"),
 		.MIF_KBD("../../rtl/acex/mif/kbd_ini2.hex")) dut(.CLK(clk), .CE(ce), .CE_N(ce_n),
 		.M1_N(m1_n), .RF_N(rf_n), .IO_N(io_n), .WR_N(wr_n), .RD_N(rd_n), .MR_N(mr_n),
 		.M1_N_NX(m1_nx), .RF_N_NX(rf_nx), .IO_N_NX(io_nx), .WR_N_NX(wr_nx), .RD_N_NX(rd_nx), .MR_N_NX(mr_nx),
@@ -115,7 +131,8 @@ module tb_eq_acex;
 		.VD2_O(vd2_o), .VD3_O(vd3_o), .VD_OE(vd_oe_o), .WR_COL(wr_col_o), .DAC_DATA(dac_data_o), .DAC_WS(dac_ws_o),
 		.DAC_BCK(dac_bck_o), .MD_I(md), .MD_O(md_o), .MD_OE(md_oe_o), .MA(ma_o), .RAS_(ras_o), .CAS_(cas_o),
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
-		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V));
+		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V),
+		.PERS_SCROLL(`PERS_SCROLL_V));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	wire [7:0] d_pin_o = d_oe_o ? d_o : d;
@@ -265,6 +282,36 @@ module tb_eq_acex;
 			7: force dut.SVIDEO.DIR_PORT = m_dir;      // DIR_PORT[4]
 			8: force dut.rst_d = m_rst;                // /RESET (Ctrl+Alt+Del by ALL_MODE5)
 			9: force dut.SVIDEO.wr_pic_x = m_wrpic;    // WR_PIC
+			default: ;
+		endcase
+	end
+`endif
+`ifdef SCROLL
+	// SCROLL: one SCROLL line back to its 3.03a form (plain nets, as above)
+	wire m_kena   = dut.all_mode_e[1];
+	wire m_zxw    = dut.sp_scr & ~(a[13] & ~dut.acc_gline[7]) & ~dut.acc_gline[6] & ~dut.all_mode_e[0];
+	wire [7:0] m_ayp = dut.type_[0] ? dut.ay_do : dut.dc_do;
+	wire [7:0] m_kemps = ({a[10], a[8]} == 2'b01) ? dut.ms_x[7:0] : ({a[10], a[8]} == 2'b11) ? ~dut.ms_y[7:0] :
+	                     {6'b111111, ~dut.ms_k[0], ~dut.ms_k[1]};
+	wire [10:0] m_ayf = dut.cth0d_q ? {dut.ay_r, 1'b0} : {dut.ay_l, 1'b0};
+	wire m_rst    = (dut.kb_reset | ~dut.all_mode_e[5]) & dut.soft_reset;
+	wire m_nmi    = ~dut.all_mode_e[4] & dut.kb_alt & ~dut.kb_f12;
+	wire m_cas_a  = dut.dc_cas | dut.cwh_q;
+	wire m_we_n   = ~dut.dw_e;
+	wire [17:0] m_sva = {dut.SVIDEO.sva_hi, dut.SVIDEO.rsva[8:6], dut.SVIDEO.mode0[3:0], dut.SVIDEO.rsva[5:0]};
+	initial begin
+		#1;
+		case (mut)
+			1: force dut.kena = m_kena;                // KEYS.ena
+			2: force dut.zx_wen = m_zxw;               // ZX_PORT[6]
+			3: force dut.ay_ports = m_ayp;             // AY/PORTS
+			4: force dut.kemps = m_kemps;              // KEMPS
+			5: force dut.ay_full_d = m_ayf;            // AY_CHS
+			6: force dut.rst_d = m_rst;                // /RESET (Ctrl+Alt+Del by ALL_MODE5)
+			7: force dut.nmi_x = m_nmi;                // NMI_X
+			8: force dut.cas_a = m_cas_a;              // CAS_A
+			9: force dut.WE_N = m_we_n;                // /WE
+			10: force dut.SVIDEO.sva_d = m_sva;        // VIDEO2 SVA (the other video lines: video2_scroll_mut)
 			default: ;
 		endcase
 	end
@@ -695,6 +742,9 @@ module tb_eq_acex;
 			mrd(16'h0123); mrd(16'h4000); mwr(16'h4001, 8'h11); mrd(16'h8000); mwr(16'h8002, 8'h22);
 			mrd(16'hC000); mwr(16'hC003, 8'h33);
 			mwr(16'h4800, 8'h44); mwr(16'h5A00, 8'h55);    // ZX screen / attributes: copied to the video RAM
+			// the copy by ALL_MODE0 = 0 (3.03a, k30) / ALL_MODE3 = 1 (SCROLL)
+			iow(P_ALLM, 8'h08); mwr(16'h4802, 8'h77); mwr(16'h5A01, 8'h88);
+			iow(P_ALLM, 8'h09); mwr(16'h4803, 8'h99); mwr(16'h5A02, 8'hAA); iow(P_ALLM, 8'h00);
 			iow(P_PN, 8'h07); mrd(16'hC100); mwr(16'hC101, 8'h66); iow(P_PN, 8'h08); mwr(16'hC000, 8'h12);
 			iow(P_SC, 8'h01); mrd(16'h0200); iow(P_SC, 8'h00);
 			// DOS: an M1 at 3Dxx with PN4 (BASIC 48 ROM) turns it on, any M1 above 3FFF off
