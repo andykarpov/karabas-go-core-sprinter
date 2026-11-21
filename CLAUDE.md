@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A PetersPlus Sprinter Sp2000 core for the Karabas Go, Mini and Mini G boards (Xilinx Spartan-6 XC6SLX25, ISE 14.7, XST). Docs, in Russian: `docs/PLAN.md` (sources, decisions, phases). Follow the phases; record a changed decision in PLAN.md.
+A PetersPlus Sprinter Sp2000 core for the Karabas Go, Mini and Mini G boards (Xilinx Spartan-6 XC6SLX25, ISE 14.7, XST). Docs, in Russian: `docs/PLAN.md` (sources, decisions, phases), `docs/BACKLOG.md` (open items, keep it current). Follow the phases; record a changed decision in PLAN.md.
 
 User decisions (2026-11-20): translate the original AHDL (ACEX EP1K30 + MAX EPM7064, version "2.18") into Verilog; no AHDL in the core, the AHDL is the reference (compiled by Quartus into a netlist for equivalence sims). Reconfiguration: one bitstream with several personalities (standard + the Thunder in the Deep game config), selected by the hash of the bitstream the BIOS streams into the ACEX, as MAME does. Try every BIOS (2.13 ... 3.06). Public repo.
 
