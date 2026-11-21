@@ -6,7 +6,7 @@ the sound and the disks are those of Mini G; the ports of a board come from its 
 
 Mini: no PCM5102 (sigma-delta AUDIO_L / AUDIO_R), no ESP32 PCM (ESP_RESET_N / ESP_BOOT_N), MCU_SCK and FT_CLK
   not on clock pins, MCU_IO[3:0], FT_RESET, MIDI_CLK 12 MHz and MIDI_RESET_N, HDMI audio at 44.1 kHz.
-Go: no HDMI, no FT_CLK_OUT, no ADC: the FPGA and the FT812 share the video DAC (VGA_*, V_CLK = inverted pixel clock
+Go: no HDMI, no FT_CLK_OUT, no ADC (no PCM1808 on the Go: zeros in the mix): the FPGA and the FT812 share the video DAC (VGA_*, V_CLK = inverted pixel clock
   of bus_ce or FT_CLK, FT_OE_N), the syncs by the OSD item VGA Sync (index 2, Go only); MCU_SCK not on a clock
   pin, INT of link v2 on MCU_SPI_IO[0], the FT812 select on MCU_SPI_FT_CS_N; the floppy connector outputs 0 (no
   physical drive yet), the beeper off, MIDI_CLK 12 MHz, DAC_LRCK / DAC_MUTE.
@@ -81,7 +81,8 @@ def go(b):
             "// the floppy connector: no physical drive yet (all outputs 0 = inactive behind the inverters)\n"
             "assign FDC_DRIVE = 2'b00;\nassign FDC_MOTOR = 1'b0;\nassign FDC_DIR = 1'b0;\nassign FDC_STEP = 1'b0;\n"
             "assign FDC_WDATA = 1'b0;\nassign FDC_WGATE = 1'b0;\nassign FDC_SIDE_N = 1'b0;\n", "esp")
-    b = cut(b, "// ADC: not used\n", "assign ADC_LRCK = 1'bz;\n", "", "adc")
+    b = cut(b, "// ---------- ADC (PCM1808", "// ---------- ADC end\n",
+            "// no ADC on the Go\nwire [15:0] adc_mix_l = 16'd0, adc_mix_r = 16'd0;\n", "adc")
     b = sub(b, *CLK12, "clk12")
     b = sub(b, *CLK12A, "clk12 assign")
     b = cut(b, "// the FT812 must always get a clock", "ODDR2 u_ft_clk (.Q(FT_CLK_OUT), .C0(clk_8mhz), .C1(~clk_8mhz), .CE(1'b1), .D0(1'b1), .D1(1'b0), .R(1'b0), .S(1'b0));\n",

@@ -14,7 +14,8 @@
 -- Video: WR_COL + palette shadow -> sp_vout (14 MHz dots, line doubler) -> OSD -> HDMI (kg_hdmi_ft).
 -- Input: PS/2 set 2 bytes of the MCU -> AT frames on the XA lines of the ACEX + SIO A; USB mouse -> MS serial line
 --   + SIO B (sp_kbd_tx, sp_ms_tx).
--- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx -> PCM5102 + HDMI audio.
+-- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx, + the tape monitor + the ADC (PCM1808: line in, MIDI synth)
+--   -> PCM5102 + HDMI audio; the peaks of the mix to the MCU.
 -- Storage (docs/storage.md): IDE primary master / slave = HDD images (slots 4 / 5), WD1793 drives A / B = floppy
 --   images (slots 0 / 1, TRD / 720 KB / 1.44 MB) on the file mounter of the MCU (sp_storage: hdf_ata, sp_fdd).
 -- Tape: TAPE_IN -> XA mux -> port FE bit 6, port FE bit 3 -> XA2 latch -> TAPE_OUT; kg_tape_monitor in the mix.
@@ -490,12 +491,18 @@ kg_tape_monitor #(.CLK_HZ(28000000), .HOLD_US(37000), .LEVEL_IN(4096), .LEVEL_OU
 	.clk(clk_bus), .mode(tape_mon), .tape_in(TAPE_IN), .tape_out(TAPE_OUT), .in_on(), .out_on(),
 	.sample(tape_mon_sample));
 
-// the final mix (clk_bus): the sound of the ACEX + the tape monitor, saturated to 16 bits
+// no ADC on the Go
+wire [15:0] adc_mix_l = 16'd0, adc_mix_r = 16'd0;
+
+// the final mix (clk_bus): the sound of the ACEX + the tape monitor + the ADC, saturated to 16 bits
 function [15:0] sat16(input [17:0] v);   // a sum of up to four 16-bit two's complement values
 	sat16 = (v[17:15] == 3'b000 || v[17:15] == 3'b111) ? v[15:0] : v[17] ? 16'h8000 : 16'h7FFF;
 endfunction
-wire [17:0] mix_l = {{2{snd_l[15]}}, snd_l} + {{2{tape_mon_sample[15]}}, tape_mon_sample};
-wire [17:0] mix_r = {{2{snd_r[15]}}, snd_r} + {{2{tape_mon_sample[15]}}, tape_mon_sample};
+function [17:0] sx18(input [15:0] v);
+	sx18 = {{2{v[15]}}, v};
+endfunction
+wire [17:0] mix_l = sx18(snd_l) + sx18(tape_mon_sample) + sx18(adc_mix_l);
+wire [17:0] mix_r = sx18(snd_r) + sx18(tape_mon_sample) + sx18(adc_mix_r);
 reg [15:0] audio_l = 16'd0, audio_r = 16'd0;
 always @(posedge clk_bus) begin
 	audio_l <= sat16(mix_l);

@@ -14,7 +14,8 @@
 -- Video: WR_COL + palette shadow -> sp_vout (14 MHz dots, line doubler) -> OSD -> HDMI (kg_hdmi_ft).
 -- Input: PS/2 set 2 bytes of the MCU -> AT frames on the XA lines of the ACEX + SIO A; USB mouse -> MS serial line
 --   + SIO B (sp_kbd_tx, sp_ms_tx).
--- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx -> PCM5102 + HDMI audio.
+-- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx, + the tape monitor + the ADC (PCM1808: line in, MIDI synth)
+--   -> PCM5102 + HDMI audio; the peaks of the mix to the MCU.
 -- Storage (docs/storage.md): IDE primary master / slave = HDD images (slots 4 / 5), WD1793 drives A / B = floppy
 --   images (slots 0 / 1, TRD / 720 KB / 1.44 MB) on the file mounter of the MCU (sp_storage: hdf_ata, sp_fdd).
 -- Tape: TAPE_IN -> XA mux -> port FE bit 6, port FE bit 3 -> XA2 latch -> TAPE_OUT; kg_tape_monitor in the mix.
@@ -146,10 +147,6 @@ assign WRD_N = 1'b1;
 assign WWR_N = 1'b1;
 assign WRESET_N = 1'b1;
 assign WD = 16'hZZZZ;
-// ADC: not used
-assign ADC_CLK = 1'b0;
-assign ADC_BCK = 1'bz;
-assign ADC_LRCK = 1'bz;
 
 // ---------- clocks: VCO 50 * 37 / 2 = 925 MHz: clk_sys /11 84.09, clk_8 /116 7.97, clk_bus /33 28.03
 wire clk_sys, clk_8mhz, clk_bus, clk_bus_pll, clk_12mhz;
@@ -477,12 +474,39 @@ kg_tape_monitor #(.CLK_HZ(28000000), .HOLD_US(37000), .LEVEL_IN(4096), .LEVEL_OU
 	.clk(clk_bus), .mode(tape_mon), .tape_in(TAPE_IN), .tape_out(TAPE_OUT), .in_on(), .out_on(),
 	.sample(tape_mon_sample));
 
-// the final mix (clk_bus): the sound of the ACEX + the tape monitor, saturated to 16 bits
+// ---------- ADC (PCM1808: the line in and the MIDI synth SAM2695 of the board; as core-p4096 / core-tsconf) ----------
+// i2s_transceiver (Digi-Key, unchanged) is the master: SCKI = ADC_CLK = clk_bus 28.03 MHz, BCK = clk_bus / 4,
+// LRCK = BCK / 64 (109.5 kHz, SCKI = 256 fs), 24 bits; half of the scale into the mix (as core-p4096)
+wire [23:0] adc_l, adc_r;
+i2s_transceiver adc(
+	.reset_n			(~areset),
+	.mclk				(clk_bus),
+	.sclk				(ADC_BCK),
+	.ws				(ADC_LRCK),
+	.sd_tx			(),
+	.sd_rx			(ADC_DOUT),
+	.l_data_tx		(24'b0),
+	.r_data_tx		(24'b0),
+	.l_data_rx		(adc_l),
+	.r_data_rx		(adc_r)
+);
+ODDR2 oddr_adc(.Q(ADC_CLK), .C0(clk_bus), .C1(~clk_bus), .CE(1'b1), .D0(1'b1), .D1(1'b0), .R(1'b0), .S(1'b0));
+reg [15:0] adc_mix_l = 16'd0, adc_mix_r = 16'd0;
+always @(posedge clk_bus) begin
+	adc_mix_l <= {adc_l[23], adc_l[23:9]};
+	adc_mix_r <= {adc_r[23], adc_r[23:9]};
+end
+// ---------- ADC end
+
+// the final mix (clk_bus): the sound of the ACEX + the tape monitor + the ADC, saturated to 16 bits
 function [15:0] sat16(input [17:0] v);   // a sum of up to four 16-bit two's complement values
 	sat16 = (v[17:15] == 3'b000 || v[17:15] == 3'b111) ? v[15:0] : v[17] ? 16'h8000 : 16'h7FFF;
 endfunction
-wire [17:0] mix_l = {{2{snd_l[15]}}, snd_l} + {{2{tape_mon_sample[15]}}, tape_mon_sample};
-wire [17:0] mix_r = {{2{snd_r[15]}}, snd_r} + {{2{tape_mon_sample[15]}}, tape_mon_sample};
+function [17:0] sx18(input [15:0] v);
+	sx18 = {{2{v[15]}}, v};
+endfunction
+wire [17:0] mix_l = sx18(snd_l) + sx18(tape_mon_sample) + sx18(adc_mix_l);
+wire [17:0] mix_r = sx18(snd_r) + sx18(tape_mon_sample) + sx18(adc_mix_r);
 reg [15:0] audio_l = 16'd0, audio_r = 16'd0;
 always @(posedge clk_bus) begin
 	audio_l <= sat16(mix_l);
