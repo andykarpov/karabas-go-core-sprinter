@@ -5,7 +5,8 @@
 // runs from ROM page 0x0C on the 14 MHz clock of the MAX and pours the bitstream bit by bit (WR_CNF, D0); here the
 // stream is received, counted and hashed, and at its end the ACEX (always the translated 3.03a) is released.
 // Board-specific parts (PLL, pins, the MCU link, HDMI, the ROM loader) are in the board top; the peripherals not made
-// yet (WD1793 + separator, IDE, RTC, PS/2 from the MCU, the video output) are ports marked TODO.
+// yet (the FDD data separator, RTC) are ports marked TODO. The storage controllers (IDE, WD1793 on SD images:
+// board/sp_storage.v, docs/storage.md) sit outside on the MAX strobes and the MD bus (PER_D / PER_OE).
 //
 // Clock: CLK = 84 MHz; CE / CE_N (the edges of the original 42 MHz) are made here, CE first after power-up.
 //
@@ -88,13 +89,18 @@ module sp_machine #(
 	output      [7:0] PA_O,
 	input       [7:0] PB_I,
 	output      [7:0] PB_O,
-	// ---- peripherals on the MD bus (TODO: WD1793, IDE, DS12887, Kempston): their read data and the strobes of the MAX
+	// ---- peripherals on the MD bus (IDE, WD1793, DS12887: sp_storage and sp_cmos outside): their read data and the
+	// strobes of the MAX. The 8-bit devices (type 7 ports: WD1793, #FF, CMOS) are read from MD[15:8], IDE as a word.
 	input      [15:0] PER_D,          // read data of the selected peripheral
-	input             PER_OE,         // ... drives MD (an I/O read of a peripheral, after the DRAM cycle)
+	input             PER_OE,         // ... drives MD (from its read strobe to the end of the I/O cycle)
 	output     [15:0] MD,             // the MD bus (write data of the peripherals)
 	output      [3:0] HDD_C,          // control word latched from MA (DD11 and its pair)
 	output      [2:0] FDD_C,
 	output      [2:0] HD_A,           // IDE register
+	output      [1:0] WG_A,           // MA[1:0] of the control word (A6..A5 of the port): the WD1793 register
+	output            RD_KMPS,        // the read strobe of the KP11 multiplexer (#FF: INTRQ / DRQ when FDD_C0 = 1)
+	output            IORQ_N,         // the CPU /IORQ (the end of an I/O cycle)
+	output            CPU_RES_N,      // the CPU /RESET line
 	output            WR_PDOS,
 	output            WG_WR_N,
 	output            WG_RD_N,
@@ -180,22 +186,25 @@ module sp_machine #(
 
 	// ================= the latches of the board on MA (DD11, DD16 and the one of HDD_C0 / FDD_C): taken at the rise
 	// of WR_AWG (MA as before the edge), cleared by the CPU /RESET line
-	reg  [14:2] ma_l = 13'd0;
+	// karabas: MA[1:0] (the WD1793 register, A6..A5 of the port) latched with them; on the board the WD1793 takes its
+	// A0 / A1 elsewhere (not traced on the schematic), for the register-level model the control word carries them
+	reg  [14:0] ma_l = 15'd0;
 	reg   [2:0] xa_l = 3'd0;
 	reg         awg_p = 1'b1;
-	reg  [14:2] ma_p = 13'd0;
+	reg  [14:0] ma_p = 15'd0;
 	reg   [2:0] xa_p = 3'd0;
 	always @(posedge CLK) begin
 		awg_p <= on ? x_awg : 1'b1;              // R73 pulls WR_AWG up while the ACEX is empty
-		ma_p  <= x_ma[14:2];
+		ma_p  <= x_ma[14:0];
 		xa_p  <= x_xaoe ? x_xao : xa_in;
-		if (~z_res_n) begin ma_l <= 13'd0; xa_l <= 3'd0; end
+		if (~z_res_n) begin ma_l <= 15'd0; xa_l <= 3'd0; end
 		else if (on & ~awg_p & x_awg) begin ma_l <= ma_p; xa_l <= xa_p; end
 	end
 	always @* begin int_l = ma_l[13]; nmi_l = ma_l[12]; end
 	assign HDD_C     = ma_l[8:5];
 	assign FDD_C     = ma_l[4:2];
 	assign HD_A      = ma_l[11:9];
+	assign WG_A      = ma_l[1:0];
 	assign TURBO_LED = ma_l[14];
 	assign TAPE_OUT  = xa_l[2];
 
@@ -209,6 +218,9 @@ module sp_machine #(
 		.CMOS_DWR(CMOS_DWR), .CMOS_AS(CMOS_AS), .CMOS_DRD(CMOS_DRD), .HD_DIR(), .HD_CS(), .XHD_RES(XHD_RES),
 		.XHD_WR(XHD_WR), .XHD_RD(XHD_RD), .XHD1_CS(XHD1_CS), .XHD2_CS(XHD2_CS), .T320_O(T320));
 	assign FDD_1440 = max_kd0;
+	assign RD_KMPS  = on ? x_kmps : 1'b1;
+	assign IORQ_N   = io_n;
+	assign CPU_RES_N = z_res_n;
 
 	// ================= CPU clock, /RESET, /WAIT
 	// CLKZZ (XCT1 of the MAX) changes at CE and CE_N; sp_z84c15 wants a clock that changes at CE_N with its next

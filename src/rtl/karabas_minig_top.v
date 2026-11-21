@@ -15,7 +15,9 @@
 -- Input: PS/2 set 2 bytes of the MCU -> AT frames on the XA lines of the ACEX + SIO A; USB mouse -> MS serial line
 --   + SIO B (sp_kbd_tx, sp_ms_tx).
 -- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx -> PCM5102 + HDMI audio.
--- Not yet (bus idle): WD1793 + floppies, IDE, DS12887 RTC, tape, ISA.
+-- Storage (docs/storage.md): IDE primary master / slave = HDD images (slots 4 / 5), WD1793 drives A / B = floppy
+--   images (slots 0 / 1, TRD / 720 KB / 1.44 MB) on the file mounter of the MCU (sp_storage: hdf_ata, sp_fdd).
+-- Not yet (bus idle): the DS12887 RTC (the CMOS hook of sp_storage), tape, ISA.
 ------------------------------------------------------------------------------------------------------------------*/
 
 module karabas_minig_top (
@@ -202,6 +204,15 @@ wire ld_active, ld_wr;
 wire [31:0] ld_addr;
 wire [7:0] ld_data;
 
+// the image files of the mcu (kg_mcu2 ENABLE_IMG): floppies slots 0-1, hard disks slots 4-5 (sp_storage)
+wire [7:0] sdc_img_mounted, sdc_rd, sdc_wr, img_wp;
+wire [63:0] sdc_img_size;
+wire [31:0] sdc_sector;
+wire sdc_busy, sdc_done, sdc_error, sdc_byte_in_strobe;
+wire [2:0] sdc_slot;
+wire [8:0] sdc_byte_addr;
+wire [7:0] sdc_byte_in_data, sdc_byte_out_data;
+
 localparam SW_N = 2;
 wire [SW_N*8-1:0] softsw;
 
@@ -210,7 +221,7 @@ kg_mcu2 #(
 	.SW_N(SW_N),
 	.CS_FILTER(3),
 	.ENABLE_OSD(1),
-	.ENABLE_IMG(0),
+	.ENABLE_IMG(1),
 	.ENABLE_PORTS(4'b0000),
 	.ENABLE_RTC(0),
 	.ENABLE_AUX(0),
@@ -282,20 +293,20 @@ kg_mcu2 #(
 	.OSD_PH			(osd_ph),
 	.OSD_PLACE		(osd_place),
 	.OSD_ZOOM		(osd_zoom),
-	.SDC_IMG_MOUNTED(),
-	.SDC_IMG_SIZE	(),
-	.SDC_RD			(8'd0),
-	.SDC_WR			(8'd0),
-	.SDC_SECTOR		(32'd0),
-	.SDC_BUSY		(),
-	.SDC_DONE		(),
-	.SDC_ERROR		(),
-	.SDC_SLOT		(),
-	.SDC_BYTE_IN_STROBE(),
-	.SDC_BYTE_ADDR	(),
-	.SDC_BYTE_IN_DATA(),
-	.SDC_BYTE_OUT_DATA(8'd0),
-	.IMG_WP			(),
+	.SDC_IMG_MOUNTED(sdc_img_mounted),
+	.SDC_IMG_SIZE	(sdc_img_size),
+	.SDC_RD			(sdc_rd),
+	.SDC_WR			(sdc_wr),
+	.SDC_SECTOR		(sdc_sector),
+	.SDC_BUSY		(sdc_busy),
+	.SDC_DONE		(sdc_done),
+	.SDC_ERROR		(sdc_error),
+	.SDC_SLOT		(sdc_slot),
+	.SDC_BYTE_IN_STROBE(sdc_byte_in_strobe),
+	.SDC_BYTE_ADDR	(sdc_byte_addr),
+	.SDC_BYTE_IN_DATA(sdc_byte_in_data),
+	.SDC_BYTE_OUT_DATA(sdc_byte_out_data),
+	.IMG_WP			(img_wp),
 	.IMG_PHYS_WR	(),
 	.IMG_PHYS		(),
 	.IMG_FLUSH		(),
@@ -385,6 +396,13 @@ wire wr_col, sinc_h, sinc_v;
 wire [31:0] pal_q;
 wire dac_data, dac_ws, dac_bck;
 wire [1:0] cfg_state;
+wire [15:0] per_d, m_md;
+wire per_oe, m_iorq_n, m_cpu_res_n, m_rd_kmps;
+wire [3:0] m_hdd_c;
+wire [2:0] m_fdd_c, m_hd_a;
+wire [1:0] m_wg_a;
+wire m_wr_pdos, m_wg_wr_n, m_wg_rd_n, m_cmos_dwr, m_cmos_as, m_cmos_drd, m_xhd_res, m_xhd_wr, m_xhd_rd, m_fdd_1440;
+wire [2:1] m_xhd1_cs, m_xhd2_cs;
 sp_machine #(
 	.MIF_DCP("rtl/acex/mif/dcp.hex"), .MIF_AY("rtl/acex/mif/ay.hex"), .MIF_KBD("rtl/acex/mif/kbd_ini2.hex")
 ) machine (
@@ -397,12 +415,27 @@ sp_machine #(
 	.TAPE_OUT(TAPE_OUT),
 	.RXA_D(rxa_d), .RXA_STB(rxa_stb), .RXA_RDY(rxa_rdy), .RXB_D(rxb_d), .RXB_STB(rxb_stb), .RXB_RDY(rxb_rdy),
 	.PA_I(8'hFF), .PA_O(), .PB_I(8'hFF), .PB_O(),
-	.PER_D(16'hFFFF), .PER_OE(1'b0), .MD(), .HDD_C(), .FDD_C(), .HD_A(), .WR_PDOS(), .WG_WR_N(), .WG_RD_N(),
-	.CMOS_DWR(), .CMOS_AS(), .CMOS_DRD(), .XHD_RES(), .XHD_WR(), .XHD_RD(), .XHD1_CS(), .XHD2_CS(), .FDD_1440(),
+	.PER_D(per_d), .PER_OE(per_oe), .MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a),
+	.RD_KMPS(m_rd_kmps), .IORQ_N(m_iorq_n), .CPU_RES_N(m_cpu_res_n), .WR_PDOS(m_wr_pdos), .WG_WR_N(m_wg_wr_n),
+	.WG_RD_N(m_wg_rd_n), .CMOS_DWR(m_cmos_dwr), .CMOS_AS(m_cmos_as), .CMOS_DRD(m_cmos_drd), .XHD_RES(m_xhd_res),
+	.XHD_WR(m_xhd_wr), .XHD_RD(m_xhd_rd), .XHD1_CS(m_xhd1_cs), .XHD2_CS(m_xhd2_cs), .FDD_1440(m_fdd_1440),
 	.WR_COL(wr_col), .PAL_Q(pal_q), .VA(), .SINC_H(sinc_h), .SINC_V(sinc_v), .T320(),
 	.DAC_DATA(dac_data), .DAC_WS(dac_ws), .DAC_BCK(dac_bck), .TURBO_LED(),
 	.CFG_STATE(cfg_state), .CFG_HASH(), .CFG_BYTES(), .CFG_PERS(), .CFG_UNKNOWN()
 );
+
+// ---------- storage: IDE and WD1793 on the image files, the read data of the peripherals on MD (docs/storage.md)
+// CMOS hook (docs/rtc.md, sp_cmos): its strobes are m_cmos_dwr / m_cmos_as (active high) / m_cmos_drd, its address /
+// write byte m_md[15:8]; its read byte goes to CMOS_Q (on MD while m_cmos_drd is low). Until then a CMOS read gives 00.
+sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
+	.MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a), .XHD_RES(m_xhd_res), .XHD_RD(m_xhd_rd),
+	.XHD_WR(m_xhd_wr), .XHD1_CS(m_xhd1_cs), .XHD2_CS(m_xhd2_cs), .WG_RD_N(m_wg_rd_n), .WG_WR_N(m_wg_wr_n),
+	.WR_PDOS(m_wr_pdos), .RD_KMPS(m_rd_kmps), .FDD_1440(m_fdd_1440), .CMOS_DRD(m_cmos_drd), .CMOS_Q(8'h00),
+	.PER_D(per_d), .PER_OE(per_oe),
+	.SDC_IMG_MOUNTED(sdc_img_mounted), .SDC_IMG_SIZE(sdc_img_size), .SDC_RD(sdc_rd), .SDC_WR(sdc_wr),
+	.SDC_SECTOR(sdc_sector), .SDC_BUSY(sdc_busy), .SDC_DONE(sdc_done), .SDC_ERROR(sdc_error), .SDC_SLOT(sdc_slot),
+	.SDC_BYTE_IN_STROBE(sdc_byte_in_strobe), .SDC_BYTE_ADDR(sdc_byte_addr), .SDC_BYTE_IN_DATA(sdc_byte_in_data),
+	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(img_wp), .HDD_LED(), .FDD_ACTIVE());
 
 // SRAM and SDRAM data pins: the output enables per bit (ODDR2 / IOB flip-flops inside the controllers)
 genvar gi;

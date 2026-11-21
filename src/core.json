@@ -25,6 +25,35 @@
             "name": "Reset",
             "index": 0,
             "hotkey": "Menu+F12"
+        },
+        {
+            "type": "-"
+        },
+        {
+            "type": "F",
+            "name": "Disk A",
+            "slot": 0,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F5"
+        },
+        {
+            "type": "F",
+            "name": "Disk B",
+            "slot": 1,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F6"
+        },
+        {
+            "type": "F",
+            "name": "HDD Master",
+            "slot": 4,
+            "extensions": ".vhd .img .hdf"
+        },
+        {
+            "type": "F",
+            "name": "HDD Slave",
+            "slot": 5,
+            "extensions": ".vhd .img .hdf"
         }
     ]
 }
