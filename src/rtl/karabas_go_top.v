@@ -22,7 +22,7 @@
 -- Not yet (bus idle): ISA.
 ------------------------------------------------------------------------------------------------------------------*/
 // karabas: made by src/tools/mktop.py from karabas_minig_top.v (do not edit it, change Mini G)
-// The Go: VGA (the video DAC, V_CLK) instead of HDMI, no FT_CLK_OUT, no ADC, the floppy connector unused.
+// The Go: VGA (the video DAC, V_CLK) instead of HDMI, no FT_CLK_OUT, no ADC, the physical floppy drives.
 
 module karabas_go_top (
    //---------------------------
@@ -140,14 +140,6 @@ assign FLASH_HOLD_N = 1'b1;
 assign ESP_RESET_N = 1'bz;
 assign ESP_BOOT_N = 1'bz;
 assign BEEPER = 1'b0;
-// the floppy connector: no physical drive yet (all outputs 0 = inactive behind the inverters)
-assign FDC_DRIVE = 2'b00;
-assign FDC_MOTOR = 1'b0;
-assign FDC_DIR = 1'b0;
-assign FDC_STEP = 1'b0;
-assign FDC_WDATA = 1'b0;
-assign FDC_WGATE = 1'b0;
-assign FDC_SIDE_N = 1'b0;
 assign UART_RX = 1'bz;
 assign UART_TX = 1'bz;
 assign UART_CTS = 1'bz;
@@ -228,6 +220,19 @@ wire sdc_busy, sdc_done, sdc_error, sdc_byte_in_strobe;
 wire [2:0] sdc_slot;
 wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, sdc_byte_out_data;
+wire img_phys_wr;                         // CMD_IMG_PHYS: a floppy slot on the connector (the Go only)
+wire [15:0] img_phys;
+// the floppy connector (high = active at the pins, the board has inverters; FDC_SIDE_N is side 1 when high):
+// sp_fdd_phys inside sp_storage, registered there, all 0 while no physical drive is selected
+wire [3:0] fdd_in = { FDC_RDATA, FDC_WPRT, FDC_TR00, FDC_INDEX };
+wire [7:0] fdd_out;
+assign FDC_DRIVE = fdd_out[1:0];
+assign FDC_MOTOR = fdd_out[2];
+assign FDC_DIR = fdd_out[3];
+assign FDC_STEP = fdd_out[4];
+assign FDC_SIDE_N = fdd_out[5];
+assign FDC_WGATE = fdd_out[6];
+assign FDC_WDATA = fdd_out[7];
 
 localparam SW_N = 4;
 wire [SW_N*8-1:0] softsw;
@@ -334,8 +339,8 @@ kg_mcu2 #(
 	.SDC_BYTE_IN_DATA(sdc_byte_in_data),
 	.SDC_BYTE_OUT_DATA(sdc_byte_out_data),
 	.IMG_WP			(img_wp),
-	.IMG_PHYS_WR	(),
-	.IMG_PHYS		(),
+	.IMG_PHYS_WR	(img_phys_wr),
+	.IMG_PHYS		(img_phys),
 	.IMG_FLUSH		(),
 	.FDD_CHNG_WR	(),
 	.FDD_CHNG		(),
@@ -460,7 +465,7 @@ sp_machine #(
 // (on MD while m_cmos_drd is low)
 sp_cmos u_cmos(.CLK(clk_sys), .MD(m_md), .CMOS_AS(m_cmos_as), .CMOS_DWR(m_cmos_dwr), .CMOS_DRD(m_cmos_drd),
 	.Q(cmos_q), .OE(), .CLK_BUS(clk_bus), .RTC_A(rtc_a), .RTC_DI(rtc_di), .RTC_WR_N(rtc_wr_n), .RTC_DO(rtc_do));
-sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
+sp_storage #(.PHYS_FDD(1)) storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
 	.MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a), .XHD_RES(m_xhd_res), .XHD_RD(m_xhd_rd),
 	.XHD_WR(m_xhd_wr), .XHD1_CS(m_xhd1_cs), .XHD2_CS(m_xhd2_cs), .WG_RD_N(m_wg_rd_n), .WG_WR_N(m_wg_wr_n),
 	.WR_PDOS(m_wr_pdos), .RD_KMPS(m_rd_kmps), .FDD_1440(m_fdd_1440), .CMOS_DRD(m_cmos_drd), .CMOS_Q(cmos_q),
@@ -468,7 +473,8 @@ sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(
 	.SDC_IMG_MOUNTED(sdc_img_mounted), .SDC_IMG_SIZE(sdc_img_size), .SDC_RD(sdc_rd), .SDC_WR(sdc_wr),
 	.SDC_SECTOR(sdc_sector), .SDC_BUSY(sdc_busy), .SDC_DONE(sdc_done), .SDC_ERROR(sdc_error), .SDC_SLOT(sdc_slot),
 	.SDC_BYTE_IN_STROBE(sdc_byte_in_strobe), .SDC_BYTE_ADDR(sdc_byte_addr), .SDC_BYTE_IN_DATA(sdc_byte_in_data),
-	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(img_wp), .HDD_LED(), .FDD_ACTIVE());
+	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(img_wp), .HDD_LED(), .FDD_ACTIVE(),
+	.IMG_PHYS_WR(img_phys_wr), .IMG_PHYS(img_phys), .FDD_IN(fdd_in), .FDD_OUT(fdd_out));
 
 // SRAM and SDRAM data pins: the output enables per bit (ODDR2 / IOB flip-flops inside the controllers)
 genvar gi;

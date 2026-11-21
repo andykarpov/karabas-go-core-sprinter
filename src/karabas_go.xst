@@ -26,7 +26,7 @@ run
 -lc Auto
 -reduce_control_sets Auto
 -define { HW_ID2 HW_ID3 }
--vlgincdir {"../modules/rtl/mcu"}
+-vlgincdir {"../modules/rtl/mcu" "rtl/fdd/vg93"}
 -fsm_extract NO -fsm_encoding Auto
 -safe_implementation No
 -fsm_style LUT

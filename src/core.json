@@ -7,6 +7,10 @@
     "eeprom_bank": 4,
     "eeprom_init": "roms/cmos_306_mame.bin",
     "rtc_mode": 0,
+    "drives": [
+        "A",
+        "B"
+    ],
     "roms": [
         {
             "filename": "roms/sp2k-3.06-hf2.rom",
@@ -45,14 +49,44 @@
             "name": "Disk A",
             "slot": 0,
             "extensions": ".img .ima .trd",
-            "hotkey": "Menu+F5"
+            "hotkey": "Menu+F5",
+            "physical": 1,
+            "boards": [
+                "go"
+            ]
+        },
+        {
+            "type": "F",
+            "name": "Disk A",
+            "slot": 0,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F5",
+            "boards": [
+                "mini",
+                "minig"
+            ]
         },
         {
             "type": "F",
             "name": "Disk B",
             "slot": 1,
             "extensions": ".img .ima .trd",
-            "hotkey": "Menu+F6"
+            "hotkey": "Menu+F6",
+            "physical": 1,
+            "boards": [
+                "go"
+            ]
+        },
+        {
+            "type": "F",
+            "name": "Disk B",
+            "slot": 1,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F6",
+            "boards": [
+                "mini",
+                "minig"
+            ]
         },
         {
             "type": "F",

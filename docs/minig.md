@@ -129,7 +129,7 @@ XST: тристабильных буферов нет, автоматов (FSM) 
 Топы `rtl/karabas_go_top.v` и `rtl/karabas_mini_top.v` руками не правятся: их делает `src/tools/mktop.py` из топа Mini G (как в core-p4096; выводы плат — из топов core-p4096, при первом запуске `python3 tools/mktop.py go=…/core-p4096/src/rtl/karabas_go_top.v mini=…`). Замены:
 
 - **Mini** (до ревизии G): звук — сигма-дельта `AUDIO_L` / `AUDIO_R` вместо PCM5102, HDMI-звук 44,1 кГц, `MCU_SCK` / `FT_CLK` не на тактовых выводах, `MCU_IO[3:0]`, `FT_RESET`, `MIDI_CLK` 12 МГц.
-- **Go**: VGA через общий с FT812 видео-ЦАП (`VGA_*`, `V_CLK` = инвертированный пиксельный такт из `rtl/board/bus_ce.v`, `FT_OE_N`), HDMI, `FT_CLK_OUT` и АЦП нет; полярность синхроимпульсов — пункт OSD **VGA Sync** (индекс 2, только Go, по умолчанию −H −V); прерывание link v2 на `MCU_SPI_IO[0]`, выбор FT812 — `MCU_SPI_FT_CS_N`; разъём дисковода — все выходы 0 (физического FDD пока нет), `BEEPER` = 0, `DAC_LRCK` / `DAC_MUTE`.
+- **Go**: VGA через общий с FT812 видео-ЦАП (`VGA_*`, `V_CLK` = инвертированный пиксельный такт из `rtl/board/bus_ce.v`, `FT_OE_N`), HDMI, `FT_CLK_OUT` и АЦП нет; полярность синхроимпульсов — пункт OSD **VGA Sync** (индекс 2, только Go, по умолчанию −H −V); прерывание link v2 на `MCU_SPI_IO[0]`, выбор FT812 — `MCU_SPI_FT_CS_N`; разъём дисковода — физические дисководы A / B (Ф4, `sp_fdd_phys`, `docs/storage.md` 7а; выходы 0, пока выбран образ), `BEEPER` = 0, `DAC_LRCK` / `DAC_MUTE`.
 
 `.ucf` — выводы из core-p4096, ограничения тайминга наши (T80 многотактовый, SRAM 8 / 4 нс, SDRAM 6 / 4 нс); MCU на Go / Mini — 16 МГц без пакетов.
 

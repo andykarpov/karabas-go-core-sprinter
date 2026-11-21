@@ -213,6 +213,11 @@ wire sdc_busy, sdc_done, sdc_error, sdc_byte_in_strobe;
 wire [2:0] sdc_slot;
 wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, sdc_byte_out_data;
+wire img_phys_wr;                         // CMD_IMG_PHYS: a floppy slot on the connector (the Go only)
+wire [15:0] img_phys;
+// the floppy connector (the Go only): no drive here
+wire [3:0] fdd_in = 4'b0000;
+wire [7:0] fdd_out;
 
 localparam SW_N = 4;
 wire [SW_N*8-1:0] softsw;
@@ -319,8 +324,8 @@ kg_mcu2 #(
 	.SDC_BYTE_IN_DATA(sdc_byte_in_data),
 	.SDC_BYTE_OUT_DATA(sdc_byte_out_data),
 	.IMG_WP			(img_wp),
-	.IMG_PHYS_WR	(),
-	.IMG_PHYS		(),
+	.IMG_PHYS_WR	(img_phys_wr),
+	.IMG_PHYS		(img_phys),
 	.IMG_FLUSH		(),
 	.FDD_CHNG_WR	(),
 	.FDD_CHNG		(),
@@ -443,7 +448,7 @@ sp_machine #(
 // (on MD while m_cmos_drd is low)
 sp_cmos u_cmos(.CLK(clk_sys), .MD(m_md), .CMOS_AS(m_cmos_as), .CMOS_DWR(m_cmos_dwr), .CMOS_DRD(m_cmos_drd),
 	.Q(cmos_q), .OE(), .CLK_BUS(clk_bus), .RTC_A(rtc_a), .RTC_DI(rtc_di), .RTC_WR_N(rtc_wr_n), .RTC_DO(rtc_do));
-sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
+sp_storage #(.PHYS_FDD(0)) storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
 	.MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a), .XHD_RES(m_xhd_res), .XHD_RD(m_xhd_rd),
 	.XHD_WR(m_xhd_wr), .XHD1_CS(m_xhd1_cs), .XHD2_CS(m_xhd2_cs), .WG_RD_N(m_wg_rd_n), .WG_WR_N(m_wg_wr_n),
 	.WR_PDOS(m_wr_pdos), .RD_KMPS(m_rd_kmps), .FDD_1440(m_fdd_1440), .CMOS_DRD(m_cmos_drd), .CMOS_Q(cmos_q),
@@ -451,7 +456,8 @@ sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(
 	.SDC_IMG_MOUNTED(sdc_img_mounted), .SDC_IMG_SIZE(sdc_img_size), .SDC_RD(sdc_rd), .SDC_WR(sdc_wr),
 	.SDC_SECTOR(sdc_sector), .SDC_BUSY(sdc_busy), .SDC_DONE(sdc_done), .SDC_ERROR(sdc_error), .SDC_SLOT(sdc_slot),
 	.SDC_BYTE_IN_STROBE(sdc_byte_in_strobe), .SDC_BYTE_ADDR(sdc_byte_addr), .SDC_BYTE_IN_DATA(sdc_byte_in_data),
-	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(img_wp), .HDD_LED(), .FDD_ACTIVE());
+	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(img_wp), .HDD_LED(), .FDD_ACTIVE(),
+	.IMG_PHYS_WR(img_phys_wr), .IMG_PHYS(img_phys), .FDD_IN(fdd_in), .FDD_OUT(fdd_out));
 
 // SRAM and SDRAM data pins: the output enables per bit (ODDR2 / IOB flip-flops inside the controllers)
 genvar gi;

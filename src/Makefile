@@ -39,7 +39,7 @@ MAP_T_mini = 2
 MAP_T_minig = 2
 MAP_OPT = -logic_opt off -ol high -xe n -xt 0 -register_duplication off -r 4 -global_opt off -mt 2 -detail -ir off -pr b -lc off -power off
 PAR_OPT = -ol high -xe n -mt 2
-INCLUDES = $(wildcard ../modules/rtl/mcu/*.vh) $(wildcard rtl/acex/mif/*.hex)
+INCLUDES = $(wildcard ../modules/rtl/mcu/*.vh) $(wildcard rtl/acex/mif/*.hex) $(wildcard rtl/fdd/vg93/*.vh) rtl/fdd/vg93/vg93-microcode-rom.hex
 
 .PHONY: all clean $(BOARDS) $(BOARDS:=-xst) $(BOARDS:=-impl) $(BOARDS:=-core) $(BOARDS:=-report) $(BOARDS:=-pack)
 

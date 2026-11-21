@@ -78,3 +78,4 @@ src/sim/board/build/
 src/sim/cmos/build/
 src/sim/storage/build/
 src/sim/io/build/
+src/sim/fdd/build/
