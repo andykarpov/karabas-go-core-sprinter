@@ -8,11 +8,16 @@ What BIOS 3.04 and the DSS boot loader need (docs/storage.md, section 4a):
 - MBR partition entry 0 (the loader looks at entry 0 only), active (0x80: the DSS 1.7x loader needs it), type
   01 / 04 / 06 / 0E, its LBA start and size;
 - FAT16 (or FAT12) with 512-byte sectors, media F8, "FAT16" at #36 of the boot sector;
-- SYSTEM.DOS in the root (the loader reads it), SYSTEM.EXE in the root (the shell DSS starts).
+- SYSTEM.DOS in the root (the loader reads it), SYSTEM.EXE in the root (the shell DSS starts);
+- 64 sectors a cluster (32 KB) or more: the DSS 1.70 loader (BIOS 3.05 / 3.06), with a SYSTEM.DOS of 16 KB or
+  more, hangs on a cluster of <= 32 sectors (its multi-cluster path, cp #21 at #81D3; MAME 3.06 and the board
+  alike). FAT16 needs 4085 clusters, so the image is ~132 MB at least (whole cylinders); DSS 1.62 boots from any cluster size
+  (--spc 4 makes a 64 MB one).
 
 Geometry: 16 heads, 63 sectors (hdf_ata without RDB); the size is rounded down to whole cylinders (1008 sectors).
 
-usage: mkhdd.py [--size-mb N] [--loader FILE] OUT.img TREE
+usage: mkhdd.py [--size-mb N] [--spc N] [--loader FILE] OUT.img TREE
+  --size-mb: default 132; --spc: sectors a cluster (default 64, 128 when 64 gives too many clusters).
   --loader: BOOT.EXE of DSS, or a DSS boot floppy / disk image (sectors 1..3); default TREE/BIN/BOOT.EXE.
 Needs mkfs.fat and mtools (mcopy, mmd).
 """
@@ -58,7 +63,8 @@ def chs(lba):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--size-mb", type=int, default=64)
+    ap.add_argument("--size-mb", type=int, default=132)
+    ap.add_argument("--spc", type=int, choices=[4, 8, 16, 32, 64, 128])
     ap.add_argument("--loader")
     ap.add_argument("out")
     ap.add_argument("tree")
@@ -80,12 +86,15 @@ def main():
     psize = total - PART_LBA
     if psize < 16 * 1024 * 1024 // SEC:
         sys.exit("too small for FAT16")
-    # FAT16: 4085..65524 clusters; the smallest cluster that fits (2 KB minimum)
-    spc = 4
+    # FAT16: 4085..65524 clusters; 64 sectors a cluster at least (the DSS 1.70 loader, see above)
+    spc = a.spc or 64
     while psize // spc > 65000:
         spc *= 2
     if spc > 128:
         sys.exit("too big for FAT16 with 64 KB clusters")
+    if psize // spc < 4100:
+        sys.exit("%d MB with %d sectors a cluster: under 4085 FAT16 clusters (~132 MB at least with 64; "
+                 "--spc 4 for a small DSS 1.62 disk)" % (a.size_mb, spc))
 
     with tempfile.TemporaryDirectory() as tmp:
         part = os.path.join(tmp, "part.img")
