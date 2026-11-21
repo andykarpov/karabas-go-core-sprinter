@@ -76,3 +76,5 @@ src/sim/cpu/build/
 __pycache__/
 src/syn/build/
 src/sim/board/build/
+src/sim/cmos/build/
+src/sim/storage/build/
