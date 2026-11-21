@@ -86,6 +86,7 @@ module sp_machine #(
 	input             FDD_W,          // TODO: WD1793 / drive lines of the multiplexer
 	input             FDD_CH,
 	output            TAPE_OUT,       // XA2 latched by WR_AWG (DD16)
+	output reg        MIDI_TX = 1'b1, // karabas: the MIDI out of the board: bit 2 of AY register 14 (port A, as ZX 128)
 	// ---- Z84C15 serial / PIO (TODO: the SIO streams are the AT keyboard / mouse of DSS)
 	input       [7:0] RXA_D,
 	input             RXA_STB,
@@ -174,6 +175,7 @@ module sp_machine #(
 	wire        x_mode_rq, x_mlo_rq, x_atr_zx, x_pix_rq, x_mode_fix, x_sel_rom, x_sel_cash; wire [1:0] x_mca;
 	wire [15:0] md_bus;
 	wire        max_res_c, xa3;
+	wire        x_ay_a_ev, x_ay_d_wr_n, x_ay_d_ev;
 	// the MAX /RESET (nCONFIG of the ACEX and the CPU /RESET here) through a register: in the original an
 	// asynchronous open-drain line; combinational it made a path MA latch -> MAX decode -> ACEX reset -> /WE ->
 	// SDRAM command longer than one CLK (PAR, Ф1.4). One CLK later does not matter for a reset of 0.5 s.
@@ -195,7 +197,8 @@ module sp_machine #(
 		.XA_OE(x_xaoe), .XA3(xa3), .SXA(x_sxa), .RDXA(x_rdxa), .WR_AWG(x_awg), .RD_KMPS(x_kmps), .WR_DWG(x_dwg),
 		.CT_PH(x_ct), .VA_NX(x_va_nx), .V_WR_NX(x_vwr_nx), .VA_MOD(x_va_mod), .MODE_RQ(x_mode_rq), .MLO_RQ(x_mlo_rq),
 		.VA_ATR(x_va_atr), .ATR_ZX(x_atr_zx), .PIX_RQ(x_pix_rq), .MODE_FIX(x_mode_fix), .MCA(x_mca), .SEL_ROM(x_sel_rom),
-		.SEL_CASH(x_sel_cash), .CFG_RST(cfg_rst), .CFG_DONE(cfg_done), .PERS_K30(CFG_PERS == 2'd1),
+		.SEL_CASH(x_sel_cash), .AY_A_EV(x_ay_a_ev), .AY_D_WR_N(x_ay_d_wr_n), .AY_D_EV(x_ay_d_ev),
+		.CFG_RST(cfg_rst), .CFG_DONE(cfg_done), .PERS_K30(CFG_PERS == 2'd1),
 		.PERS_SCROLL(CFG_PERS == 2'd2));
 
 	// ================= the latches of the board on MA (DD11, DD16 and the one of HDD_C0 / FDD_C): taken at the rise
@@ -221,6 +224,21 @@ module sp_machine #(
 	assign WG_A      = ma_l[1:0];
 	assign TURBO_LED = ma_l[14];
 	assign TAPE_OUT  = xa_l[2];
+
+	// ================= MIDI: a shadow of AY register 14 on the port strobes of the ACEX (karabas: the board has a MIDI
+	// out, the original not). The register number as sp_ay takes it (D[3:0] at the end of the #FFFD write, the high
+	// bits not checked), the data byte the CPU drives during the #BFFD write, taken at its end; MIDI_TX = bit 2
+	// whatever R7 says (as tsconf turbosound), 1 (idle) after the CPU reset and in SCROLL (no AY there).
+	reg  [3:0] ay_reg = 4'd0;
+	reg  [7:0] ay_dl = 8'hFF;
+	always @(posedge CLK) begin
+		if (~z_res_n | ~on | (CFG_PERS == 2'd2)) begin ay_reg <= 4'd0; MIDI_TX <= 1'b1; end
+		else if (ce) begin
+			if (x_ay_a_ev) ay_reg <= d_bus[3:0];
+			if (~x_ay_d_wr_n) ay_dl <= d_bus;
+			if (x_ay_d_ev & (ay_reg == 4'd14)) MIDI_TX <= ay_dl[2];
+		end
+	end
 
 	// ================= MAX
 	reg  xacs_pulse = 1'b0;

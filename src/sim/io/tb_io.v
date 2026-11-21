@@ -1,7 +1,9 @@
 // tb_io: the board I/O of sp_machine through the CPU and the ACEX (docs/PLAN.md Ф4): the BIOS image (its loader pours
 // a short configuration stream, CFG_BITS_T) with io.asm in ROM page 8, as tb_storage:
 // - tape in: TAPE_IN (the XA multiplexer, SXA = 0) read on port #FE bit 6, 0 and then 1;
-// - tape out: OUT (#FE) bit 3 -> XA2 latched by WR_AWG -> TAPE_OUT, 1 and then 0.
+// - tape out: OUT (#FE) bit 3 -> XA2 latched by WR_AWG -> TAPE_OUT, 1 and then 0;
+// - MIDI: MIDI_TX = bit 2 of AY register 14 (#FFFD / #BFFD, codes 90 / 91): idle 1, R14 = FB -> 0, a write of R7
+//   leaves it, R14 = 04 -> 1, a write of R13 with bit 2 = 0 leaves it.
 // The program logs through OUT (#01) (bytes) and OUT (#02) (markers). Runs in Verilator (--timing) or iverilog.
 `timescale 1ns/1ps
 `ifndef CFG_BITS_T
@@ -21,7 +23,7 @@ module tb_io;
 	wire sd_clk, sd_cke, sd_cs, sd_ras, sd_cas, sd_we; wire [1:0] sd_ba, sd_dqm; wire [12:0] sd_a;
 	wire [15:0] sd_dqo, sd_dqt, sd_dqi;
 	wire [1:0] cfg_state;
-	wire tape_out;
+	wire tape_out, midi_tx;
 	sp_machine #(.MIF_DCP("../../rtl/acex/mif/dcp.hex"), .MIF_AY("../../rtl/acex/mif/ay.hex"),
 		.MIF_KBD("../../rtl/acex/mif/kbd_ini2.hex"), .CFG_BITS(`CFG_BITS_T), .SD_INIT(16'd16),
 		.XHD_RES_ON_HSYNC(1)) m(.CLK(clk), .EPM_RES_N(1'b1), .PW_GOOD(1'b1),
@@ -30,7 +32,7 @@ module tb_io;
 		.SD_CLK(sd_clk), .SD_CKE(sd_cke), .SD_CS_N(sd_cs), .SD_RAS_N(sd_ras), .SD_CAS_N(sd_cas), .SD_WE_N(sd_we),
 		.SD_BA(sd_ba), .SD_A(sd_a), .SD_DQM(sd_dqm), .SD_DQ_O(sd_dqo), .SD_DQ_T(sd_dqt), .SD_DQ_I(sd_dqi),
 		.KBD_CC(1'b1), .KBD_DD(1'b1), .MOUSE_D(1'b1), .TAPE_IN(tape_in), .FDD_W(1'b1), .FDD_CH(1'b1),
-		.TAPE_OUT(tape_out),
+		.TAPE_OUT(tape_out), .MIDI_TX(midi_tx),
 		.RXA_D(8'h00), .RXA_STB(1'b0), .RXA_RDY(), .RXB_D(8'h00), .RXB_STB(1'b0), .RXB_RDY(),
 		.PA_I(8'hFF), .PA_O(), .PB_I(8'hFF), .PB_O(), .PER_D(16'hFFFF), .PER_OE(1'b0), .MD(), .HDD_C(),
 		.FDD_C(), .HD_A(), .WG_A(), .RD_KMPS(), .IORQ_N(), .CPU_RES_N(),
@@ -90,7 +92,8 @@ module tb_io;
 			if (m.a[7:0] == 8'h01) begin if (nl < 256) lg[nl] = m.d_bus; nl = nl + 1; end
 			if (m.a[7:0] == 8'h02) begin
 				last_mk = m.d_bus; nm = nm + 1;
-				$display("%0.1f us: marker %h (%0d bytes logged), TAPE_OUT %b", $realtime / 1000.0, m.d_bus, nl, tape_out);
+				$display("%0.1f us: marker %h (%0d bytes logged), TAPE_OUT %b, MIDI_TX %b", $realtime / 1000.0, m.d_bus, nl, tape_out,
+					midi_tx);
 				case (m.d_bus)
 					8'h20: tape_in <= 1'b1;
 					8'h21: begin
@@ -98,7 +101,14 @@ module tb_io;
 						check(nl == 2 && lg[0][6] == 1'b0 && lg[1][6] == 1'b1, "TAPE_IN on #FE bit 6");
 					end
 					8'h22: check(tape_out === 1'b1, "TAPE_OUT after OUT (#FE),#08");
-					8'h23: check(tape_out === 1'b0, "TAPE_OUT after OUT (#FE),#00");
+					8'h23: begin
+						check(tape_out === 1'b0, "TAPE_OUT after OUT (#FE),#00");
+						check(midi_tx === 1'b1, "MIDI_TX idle");
+					end
+					8'h30: check(midi_tx === 1'b0, "MIDI_TX after R14 = FB");
+					8'h31: check(midi_tx === 1'b0, "MIDI_TX after a write of R7");
+					8'h32: check(midi_tx === 1'b1, "MIDI_TX after R14 = 04");
+					8'h33: check(midi_tx === 1'b1, "MIDI_TX after a write of R13");
 					default: ;
 				endcase
 			end

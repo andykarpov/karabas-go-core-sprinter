@@ -154,7 +154,6 @@ assign SD_CS_N = 1'b1;
 assign SD_CLK = 1'b0;
 assign SD_DI = 1'bz;
 assign SD_DO = 1'bz;
-assign MIDI_TX = 1'b1;
 // CF card: not used yet (IDE in Ф2), the card deselected
 assign WA = 3'b000;
 assign WCS_N = 2'b11;
@@ -443,7 +442,7 @@ sp_machine #(
 	.SD_CLK(SDR_CLK), .SD_CKE(), .SD_CS_N(), .SD_RAS_N(SDR_RAS_N), .SD_CAS_N(SDR_CAS_N), .SD_WE_N(SDR_WE_N),
 	.SD_BA(SDR_BA), .SD_A(SDR_A), .SD_DQM(SDR_DQM), .SD_DQ_O(sdr_do), .SD_DQ_T(sdr_dt), .SD_DQ_I(sdr_di),
 	.KBD_CC(kbd_cc), .KBD_DD(kbd_dd), .MOUSE_D(mouse_d), .TAPE_IN(tape_in_r), .FDD_W(1'b1), .FDD_CH(1'b1),
-	.TAPE_OUT(TAPE_OUT),
+	.TAPE_OUT(TAPE_OUT), .MIDI_TX(MIDI_TX),   // MIDI: AY register 14 bit 2 (sp_machine)
 	.RXA_D(rxa_d), .RXA_STB(rxa_stb), .RXA_RDY(rxa_rdy), .RXB_D(rxb_d), .RXB_STB(rxb_stb), .RXB_RDY(rxb_rdy),
 	.PA_I(8'hFF), .PA_O(), .PB_I(8'hFF), .PB_O(),
 	.PER_D(per_d), .PER_OE(per_oe), .MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a),

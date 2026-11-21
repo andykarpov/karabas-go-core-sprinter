@@ -148,6 +148,11 @@ module sp_acex (
 	output      [1:0] MCA,          // DCP: A[1..0] of the DRAM access, from c2 to c12 (MCA1 = DRAM bank)
 	output            SEL_ROM,      // the current A / RA select the ROM (PRE_ROM / PRE_CASH, before /MR falls)
 	output            SEL_CASH,     // ... the cache (fastram)
+	// karabas: the AY port strobes for a register shadow outside (MIDI_TX of the board = AY R14 bit 2, sp_machine): the
+	// CPU writes of codes 90 (#FFFD, the register number) / 91 (#BFFD, the data), as sp_ay takes them (TDF:1194-1195)
+	output            AY_A_EV,      // at a CE: the end of a register number write (sp_ay latches D[3:0] now)
+	output            AY_D_WR_N,    // the data write strobe (low while the CPU drives D)
+	output            AY_D_EV,      // at a CE: the end of a data write
 	// karabas: configuration reset (docs/machine.md). In the original every reset of the MAX erases the ACEX and the
 	// CPU loads the bitstream again: all registers and RAMs start from the configuration. Here CFG_RST (synchronous,
 	// any length) holds every register of the ACEX and its submodules at its power-up value and reloads the RAMs the
@@ -470,6 +475,9 @@ module sp_acex (
 	// AY strobes (TDF:1194-1195)
 	wire aya_d = iom_n | WR_N | ~a90_q;
 	wire ayd_d = iom_n | WR_N | ~a91_q;
+	assign AY_A_EV   = ~aya_q & aya_d;
+	assign AY_D_WR_N = ayd_q;
+	assign AY_D_EV   = ~ayd_q & ayd_d;
 
 	// ================= video (TDF:978-1045)
 	wire gliss    = acc_gliss & page[3] & video_pg;
