@@ -32,8 +32,8 @@ CMOS ?=
 ID ?=
 NAME ?=
 JSON = core.json
-ROM ?= $(HOME)/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom
-ROM_KG = roms/kg/sp2k-3.06.rom
+ROM ?= $(HOME)/Downloads/karabas-sd-sprinter/roms/unreal-ng-2026-11-21/sp2k-3.06-hf2.rom
+ROM_KG = roms/kg/sp2k-3.06-hf2.rom
 # map / par as core-p4096; cost table 2 first (karabas-go-notes map-cost-table-2-first); -mt 2: the PC is shared
 MAP_T_minig = 2
 MAP_OPT = -logic_opt off -ol high -xe n -xt 0 -register_duplication off -r 4 -global_opt off -mt 2 -detail -ir off -pr b -lc off -power off

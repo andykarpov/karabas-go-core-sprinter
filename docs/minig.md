@@ -28,7 +28,7 @@
 
 ## 3. Загрузка ROM
 
-- `core.json` `"roms"`: `roms/kg/sp2k-3.06.rom` по адресу 0 (256 КБ; до 26112106 — 3.04). Образ в git не лежит (`docs/roms.md`): `make minig` копирует его из `$(ROM)` (по умолчанию `~/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom` = MAME `187f4382`) в `src/roms/kg/` (в `.gitignore`); без файла — ошибка с подсказкой.
+- `core.json` `"roms"`: `roms/kg/sp2k-3.06-hf2.rom` по адресу 0 (256 КБ; BIOS 3.06 Hotfix 2, «Релиз 19.01.2026», CRC `9aa7bb29`; до 26112106 — 3.04, затем 3.06 `187f4382`). Образ в git не лежит (`docs/roms.md`): `make minig` копирует его из `$(ROM)` (по умолчанию `~/Downloads/karabas-sd-sprinter/roms/unreal-ng-2026-11-21/sp2k-3.06-hf2.rom`, из [unreal-ng](https://github.com/alfishe/unreal-ng/tree/master/data/rom/sprinter)) в `src/roms/kg/` (в `.gitignore`); без файла — ошибка с подсказкой.
 - МК грузит ROM через `kg_l2_load` (вид 0) байтами, не чаще одного на 250 нс. `sp_ld_bridge`: байт `b` → слово `0x040000 + b[17:1]` SRAM, байт слова по `b[0]` (0 = `D[7:0]`), FIFO 16, порт загрузчика `sp_sram` (свободные слоты; пока машина в сбросе, их почти все). `LD_READY` = 1, `CAPS` = 0.
 - Сброс машины (`EPM_RES_N` = кнопка RESET оригинала: MAX `/RESET`, ACEX стёрт, BIOS заливает конфигурацию заново): с включения до конца первой загрузки ROM, на время загрузки ROM, пока МК `BUSY`, пока мост не пуст, по OSD Reset и кнопке платы 1. Затем MAX отпускает `/RESET` (по кадровому синхроимпульсу), ЦПУ исполняет загрузчик ACEX из ROM `0x30000` (~0,48 с), ACEX стартует, BIOS — со страницы 8.
 
