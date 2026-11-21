@@ -14,12 +14,12 @@
 // Read side (CLK28 = CLK / 3 of the same PLL, aligned: 1792 clocks a line exactly): each finished line read twice,
 // one dot a clock (line doubler), 896 x 624 / 640 at 28 MHz = 50.1 / 48.8 Hz. The line start crosses as a toggle.
 // Output window (DE): dots H0 .. H0+719, lines V0 .. V0+287 (720 x 576); HSYNC = dots 0..63, VSYNC = output lines
-// of v 0..3, positive (as kg_hdmi_ft takes them). The window is an estimate (PAL timing: the active part 10.4 us
-// after the sync start = dot 146, MAME shows 736 x 288 of the 896 x 320): check on the board.
+// of v 0..3, positive (as kg_hdmi_ft takes them). The window: set from the board (26112101: BIOS text from dot ~221 / line ~48);
+// H0 = 176 is the latest a 720-dot window can start in the 896-dot line.
 // ON = 0 (the ACEX empty, the configuration loading): black.
 module sp_vout #(
-	parameter [9:0] H0 = 10'd120,
-	parameter [8:0] V0 = 9'd14
+	parameter [9:0] H0 = 10'd176,     // board 26112101 with 120: the BIOS / SETUP picture started at dot ~221, right edge cut
+	parameter [8:0] V0 = 9'd24        // and at line ~48 (V0 = 14); the software moves it further (HOLD, SETUP X / Y position)
 ) (
 	input             CLK,
 	input             WR_COL,
