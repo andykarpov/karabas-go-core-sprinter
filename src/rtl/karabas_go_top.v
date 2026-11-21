@@ -238,6 +238,8 @@ reg  [31:0] dbg_hash = 32'd0;
 always @(posedge clk_bus) dbg_hash <= cfg_hash;
 wire [7:0] cmos_q, rtc_a, rtc_di, rtc_do;
 wire       rtc_wr_n;
+wire [23:0] matrix_cmd;          // the audio peaks (audio_peaks below)
+wire       matrix_cmd_wr;
 kg_mcu2 #(
 	.CAPS(16'h0000),
 	.SW_N(SW_N),
@@ -352,8 +354,8 @@ kg_mcu2 #(
 	.RTC_DI			(rtc_di),
 	.RTC_CS			(1'b1),
 	.RTC_WR_N		(rtc_wr_n),
-	.MATRIX_CMD		(24'd0),
-	.MATRIX_CMD_WR	(1'b0),
+	.MATRIX_CMD		(matrix_cmd),
+	.MATRIX_CMD_WR	(matrix_cmd_wr),
 	.DEBUG_ADDR		(dbg_hash[31:16]),
 	.DEBUG_DATA		(dbg_hash[15:0]),
 	.RTC_DO			(rtc_do),
@@ -483,6 +485,10 @@ always @(posedge clk_bus) begin
 	audio_l <= snd_l;
 	audio_r <= snd_r;
 end
+
+// the level meters of the mcu: the peaks of the final mix as CMD_AUDIO_PEAKS_L / _R (modules audio_peaks.v, as
+// core-nanomig), on clk_bus = the clock of kg_mcu2 (MATRIX_CMD of ENABLE_AUX)
+audio_peaks audio_peaks(.clk(clk_bus), .audio_l(audio_l), .audio_r(audio_r), .cmd_wr(matrix_cmd_wr), .cmd(matrix_cmd));
 
 kg_pcm5102 #(.DIV_BITS(1)) PCM5102(
 	.clk				(clk_bus),

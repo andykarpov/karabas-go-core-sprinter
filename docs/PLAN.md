@@ -124,7 +124,7 @@ FDD (ВГ93 + сепаратор, образы), CMOS, CBL, мышь, режим
 
 Решения пользователя 2026-11-22: CD-ROM (ATAPI) не делаем ни в каком виде, второй канал IDE в этом ядре не подключаем. Базовый набор платы обязателен для всех ядер.
 
-- 4.1 Пики звука на MCU (`audio_peaks` из modules, общий микс L / R).
+- 4.1 ✓ Пики звука на MCU (`audio_peaks` из modules, общий микс L / R): `audio_peaks` на `clk_bus` (такт `kg_mcu2`) по итоговому миксу `audio_l` / `audio_r` → `MATRIX_CMD` / `MATRIX_CMD_WR` (`ENABLE_AUX` уже был), как в core-nanomig; все три платы.
 - 4.2 Лента: проверить `TAPE_IN` / `TAPE_OUT` (порт `FE` через ACEX), монитор ленты `kg_tape_monitor` в микс, пункт OSD «Tape monitor» Off / In / Out / Both (Menu+T), как в tsconf.
 - 4.3 MIDI: бит 2 регистра 14 AY (порт A, как у ZX 128 и tsconf) → `MIDI_TX`; запись регистра перехватывается вне ACEX (AY в ACEX — микропрограмма).
 - 4.4 АЦП PCM1808 (Go, Mini G): приёмник I2S, `ADC_CLK`, линейный вход в микс.
