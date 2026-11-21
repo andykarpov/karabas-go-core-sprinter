@@ -5,18 +5,18 @@
     "type": "osd",
     "order": 44,
     "eeprom_bank": 4,
-    "eeprom_init": "roms/cmos_default.bin",
+    "eeprom_init": "roms/cmos_306_mame.bin",
     "rtc_mode": 0,
     "roms": [
         {
-            "filename": "roms/kg/sp2k-3.04.rom",
+            "filename": "roms/kg/sp2k-3.06.rom",
             "address": 0
         }
     ],
     "boards": {
         "minig": {
             "link": 2,
-            "build": "26112105",
+            "build": "26112106",
             "bitstream": "karabas_minig.bin"
         }
     },

@@ -216,6 +216,11 @@ wire [7:0] sdc_byte_in_data, sdc_byte_out_data;
 localparam SW_N = 2;
 wire [SW_N*8-1:0] softsw;
 
+// the configuration hash for the mcu log: changes only at a configuration load (clk_sys register, clk_bus = clk_sys / 3
+// with aligned edges: a plain register path)
+wire [31:0] cfg_hash;
+reg  [31:0] dbg_hash = 32'd0;
+always @(posedge clk_bus) dbg_hash <= cfg_hash;
 wire [7:0] cmos_q, rtc_a, rtc_di, rtc_do;
 wire       rtc_wr_n;
 kg_mcu2 #(
@@ -228,7 +233,7 @@ kg_mcu2 #(
 	.ENABLE_RTC(1),
 	.RTC_SEND_LIMIT(128),
 	.RTC_COALESCE(1),   // SETUP saves ~150 CMOS writes in a burst (docs/rtc.md)
-	.ENABLE_AUX(0),
+	.ENABLE_AUX(1),     // DEBUG_ADDR / DATA = the MAME hash of the ACEX configuration (kg_board.py debug 1 / log)
 	.ENABLE_FT(1),
 	.ENABLE_SD2(0)
 ) mcu(
@@ -332,10 +337,10 @@ kg_mcu2 #(
 	.RTC_DI			(rtc_di),
 	.RTC_CS			(1'b1),
 	.RTC_WR_N		(rtc_wr_n),
-	.MATRIX_CMD		(),
-	.MATRIX_CMD_WR	(),
-	.DEBUG_ADDR		(16'd0),
-	.DEBUG_DATA		(16'd0),
+	.MATRIX_CMD		(24'd0),
+	.MATRIX_CMD_WR	(1'b0),
+	.DEBUG_ADDR		(dbg_hash[31:16]),
+	.DEBUG_DATA		(dbg_hash[15:0]),
 	.RTC_DO			(rtc_do),
 	.FT_SPI_ON		(mcu_ft_spi_on),
 	.FT_VGA_ON		(mcu_ft_vga_on),
@@ -425,7 +430,7 @@ sp_machine #(
 	.XHD_WR(m_xhd_wr), .XHD_RD(m_xhd_rd), .XHD1_CS(m_xhd1_cs), .XHD2_CS(m_xhd2_cs), .FDD_1440(m_fdd_1440),
 	.WR_COL(wr_col), .PAL_Q(pal_q), .VA(), .SINC_H(sinc_h), .SINC_V(sinc_v), .T320(),
 	.DAC_DATA(dac_data), .DAC_WS(dac_ws), .DAC_BCK(dac_bck), .TURBO_LED(),
-	.CFG_STATE(cfg_state), .CFG_HASH(), .CFG_BYTES(), .CFG_PERS(), .CFG_UNKNOWN()
+	.CFG_STATE(cfg_state), .CFG_HASH(cfg_hash), .CFG_BYTES(), .CFG_PERS(), .CFG_UNKNOWN()
 );
 
 // ---------- storage: IDE and WD1793 on the image files, the read data of the peripherals on MD (docs/storage.md)

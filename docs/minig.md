@@ -28,7 +28,7 @@
 
 ## 3. Загрузка ROM
 
-- `core.json` `"roms"`: `roms/kg/sp2k-3.04.rom` по адресу 0 (256 КБ). Образ в git не лежит (`docs/roms.md`): `make minig` копирует его из `$(ROM)` (по умолчанию `~/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.04.rom` = MAME `sp2k-3.04`) в `src/roms/kg/` (в `.gitignore`); без файла — ошибка с подсказкой.
+- `core.json` `"roms"`: `roms/kg/sp2k-3.06.rom` по адресу 0 (256 КБ; до 26112106 — 3.04). Образ в git не лежит (`docs/roms.md`): `make minig` копирует его из `$(ROM)` (по умолчанию `~/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom` = MAME `187f4382`) в `src/roms/kg/` (в `.gitignore`); без файла — ошибка с подсказкой.
 - МК грузит ROM через `kg_l2_load` (вид 0) байтами, не чаще одного на 250 нс. `sp_ld_bridge`: байт `b` → слово `0x040000 + b[17:1]` SRAM, байт слова по `b[0]` (0 = `D[7:0]`), FIFO 16, порт загрузчика `sp_sram` (свободные слоты; пока машина в сбросе, их почти все). `LD_READY` = 1, `CAPS` = 0.
 - Сброс машины (`EPM_RES_N` = кнопка RESET оригинала: MAX `/RESET`, ACEX стёрт, BIOS заливает конфигурацию заново): с включения до конца первой загрузки ROM, на время загрузки ROM, пока МК `BUSY`, пока мост не пуст, по OSD Reset и кнопке платы 1. Затем MAX отпускает `/RESET` (по кадровому синхроимпульсу), ЦПУ исполняет загрузчик ACEX из ROM `0x30000` (~0,48 с), ACEX стартует, BIOS — со страницы 8.
 
@@ -63,7 +63,11 @@
 
 ## 8. Сборка
 
-`cd src && make minig` (через `job run`): XST → `ngdbuild` → `map -t 2` → `par` → `trce` → `bitgen` → `make_core.py` (`sprinter.kg`). Только Mini G.
+`cd src && make minig` (через `job run`): XST → `ngdbuild` → `map -t 2` → `par` → `trce` → `bitgen` → `make_core.py`: `sprinter.kg` с BIOS 3.06 (единственный поддерживаемый, `docs/roms.md` §1) и CMOS `roms/cmos_306_mame.bin`. Личность ACEX (k30) выбирается по хешу потока. Только Mini G.
+
+**Хеш конфигурации в логе МК.** `kg_mcu2` `ENABLE_AUX`: `DEBUG_ADDR` = старшие 16 бит хеша MAME последнего потока ACEX, `DEBUG_DATA` — младшие (`kg_board.py debug 1`, затем `kg_board.py log`; значения выводятся при изменении). В OSD не выводится: какая конфигурация работает, видно на экране POST («Ядро 1K30 v3.05» у 3.06).
+
+**Другой BIOS в отдельном `.kg` — только для проверок** (не поддерживаются; из уже собранного `karabas_minig.bin`, ISE не запускается):
 
 **Другой BIOS в отдельном `.kg`** (из уже собранного `karabas_minig.bin`, ISE не запускается):
 
@@ -76,6 +80,10 @@ cd src && make minig-pack ROM=$HOME/Downloads/karabas-sd-sprinter/roms/mame-name
 - `CMOS` — начальный образ CMOS (`eeprom_init`). `ID` — отдельное ядро в меню и свой `/config/<id>.eep`: CMOS 3.04 и 3.06 различаются (`docs/rtc.md` 8.3), общий файл давал бы «CHECKSUM ERROR» при смене BIOS. `NAME` — имя в меню. Обязательны только `ROM` и `KG` (`KG` ≠ `sprinter.kg`).
 - `roms/cmos_306_mame.bin` — CMOS авторского MAME 3.06 (`mame306/nvram/sprinter_6/rtc`, 128 байт + 128 нулей): сумма `#0E..#20` совпадает с `#3F` (`F8`), A = `26`, B = `02`, C = `50`, век `20`, дата 25.06.2025. Отличия от `cmos_306.bin` (значения по умолчанию): `#0E` = `4E`, а не `4A` — бит 2 `RUS` (язык SETUP русский, `SETTINGS.asm`), и геометрия IDE в `#12..#19` (`10 10 20 00` дважды). Значения по умолчанию без IDE — `CMOS=roms/cmos_306.bin`.
 - Личность k30 для BIOS 3.05 / 3.06 есть только в битстриме, собранном после её добавления (`docs/versions.md`): сначала `make minig`, потом `minig-pack`.
+- Сборка 26112106 (2026-11-21), тестовые `.kg` с CMOS 3.04: 2.13, 2.17, 3.00, 3.03, 3.04 → DSS 1.62 → Flex Navigator 1.13.1; 3.06 → DSS 1.70 → Flex Navigator 1.15; 3.05 («BIOS v2.54», MAME `fe1c2685` и Telegram `2d46deaf`) — циклический перезапуск после заставки (не чиним).
+- **.kg — в корень SD** (`kg_board.py sd` без `--to`), образы дисков — в `/sprinter/`.
+
+Сборка **26112105** на плате (2026-11-21): 84 МГц выполнены, 64 % LUT, 87 % слайсов. `sprinter306.kg`: POST BIOS 3.06 («Ядро 1K30 v3.05» — личность k30 выбрана по хешу `5aa954b6`), CMOS найден, время верное, IDE master; DSS 1.62 (`sp_dss162_boot.img`) → Flex Navigator 1.13.1; DSS 1.70 (`sp_dss306.img`, 132 МБ, `tools/mkhdd.py`) → Flex Navigator 1.15, часы и мышь.
 
 Сборка **26112101** (Mini G, `src/karabas_minig.bin`, `src/sprinter.kg` с BIOS 3.04 внутри; `.kg` в git не идёт — в нём ROM):
 

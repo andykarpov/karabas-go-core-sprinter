@@ -1,21 +1,22 @@
 # Sprinter Sp2000 core for Karabas Go / Mini / Mini G, ISE 14.7 (docs/minig.md).
 #
 #   make                  = make minig (Ф1: Mini G only; the Go / Mini tops come in Ф3)
-#   make minig            synthesis, implementation, bitstream, sprinter.kg
+#   make minig            synthesis, implementation, bitstream, sprinter.kg (BIOS 3.06, the only one supported)
 #   make minig-xst        one step: <board>-xst (.ngc), <board>-impl (.bin), <board>-core (.kg)
 #   make minig-report     LUTs, slices, block RAMs and the timing result of the last build
 #   make minig-pack ROM=<bios.rom> KG=<out.kg> [CMOS=<256-byte image>] [ID=<core id>] [NAME=<menu name>]
-#                         another .kg from the bitstream already built (no ISE step): the BIOS image <bios.rom> as
+#                         test only (unsupported BIOS versions): another .kg from the bitstream already built (no ISE
+#                         step): the BIOS image <bios.rom> as
 #                         roms/kg/<its name>, the CMOS image as eeprom_init; ID / NAME give it its own entry in the
 #                         boot menu and its own /config/<id>.eep (the CMOS of another BIOS differs, docs/rtc.md 8.3).
-#                         BIOS 3.06: make minig-pack ROM=$HOME/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom
-#                           KG=sprinter306.kg CMOS=roms/cmos_306_mame.bin ID=sprinter306 NAME="Sprinter 3.06"
+#                         e.g. BIOS 3.04: make minig-pack ROM=.../sp2k-3.04.rom KG=t304.kg CMOS=roms/cmos_default.bin
+#                           ID=t304 NAME="Sprinter 3.04 test"
 #   make clean            the intermediate files
 #
 # Inputs per board: karabas_<board>.prj (the source list, the shared modules as "../modules/rtl/..."), .xst,
 # .ucf, .ut. A step runs again when one of its inputs is newer than its output.
 #
-# The BIOS ROM is not in git (docs/roms.md): the .kg takes roms/kg/sp2k-3.04.rom, copied from $(ROM) at pack time
+# The BIOS ROM is not in git (docs/roms.md): the .kg takes roms/kg/sp2k-3.06.rom, copied from $(ROM) at pack time
 # (default: the local image of the MAME set, docs/roms.md 1.1).
 
 ISE_SETTINGS ?= /opt/Xilinx/14.7/ISE_DS/settings64.sh
@@ -31,8 +32,8 @@ CMOS ?=
 ID ?=
 NAME ?=
 JSON = core.json
-ROM ?= $(HOME)/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.04.rom
-ROM_KG = roms/kg/sp2k-3.04.rom
+ROM ?= $(HOME)/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom
+ROM_KG = roms/kg/sp2k-3.06.rom
 # map / par as core-p4096; cost table 2 first (karabas-go-notes map-cost-table-2-first); -mt 2: the PC is shared
 MAP_T_minig = 2
 MAP_OPT = -logic_opt off -ol high -xe n -xt 0 -register_duplication off -r 4 -global_opt off -mt 2 -detail -ir off -pr b -lc off -power off
