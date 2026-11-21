@@ -1,8 +1,10 @@
 // Z84C15 of the Sprinter: Z80 (T80pa) + the peripherals the Sprinter software uses (docs/z84c15.md): SIO A / B
-// receive (byte streams, 3-byte FIFO, RR0 / RR1 / RR2, WR0 commands), CTC channel 0 (channels 1-3: writes taken,
-// reads FF), PIO A / B registers, SCRP / SCDP (WCR, MWBR, CSBR, MCR) with the CS0 / CS1 decode, INTA vector FF.
+// receive (byte streams, 3-byte FIFO, RR0 / RR1 / RR2, WR0 commands), CTC channels 0-3 with their interrupts
+// (CLK/TRG0-2 = TRG0, ZC/TO2 -> CLK/TRG3 as MAME sprinter.cpp:1993-2008; games uwol / TMNT run CTC2 -> CTC3 with the
+// CTC3 interrupt in IM 2, vector base 00 -> 06), PIO A / B registers, SCRP / SCDP (WCR, MWBR, CSBR, MCR) with the
+// CS0 / CS1 decode. INTA: the CTC vector when a CTC channel wins the acknowledge, else FF (the ACEX interrupts).
 // Not made: WDT, INTPR (F0 / F1 / F4 are internal, writes ignored, reads FF), SIO Tx, interrupts and vectors of the
-// peripherals, daisy chain, WCR / MWBR waits, CLKOUT divider.
+// SIO / PIO (nobody enables them), WCR / MWBR waits, CLKOUT divider.
 //
 // Clock and pin contract (src/rtl/acex/sp_acex.v header): one clock CLK (84 MHz) with CE / CE_N = the rising /
 // falling edge of the original 42 MHz. The Z80 clock is the ACEX output CLKZ1 (21 / 3.5 MHz, changes at CE_N);
@@ -13,7 +15,8 @@
 // at the fall of T3, /WAIT at the fall of T2 / TW (docs/memtiming.md, column "Z80 / T80pa").
 //
 // Data in: an internal port read (A[7:0] = 10-13, 18-1F, EE, EF, F0, F1, F4) takes the internal register whatever is
-// on D_I (the internal read wins over the ACEX); INTA (M1 with IORQ) takes FF (MAME: the acknowledge callback = FF).
+// on D_I (the internal read wins over the ACEX); INTA (M1 with IORQ) takes the CTC vector or FF (MAME: the daisy
+// chain of the Z84C15, else the acknowledge callback = FF).
 // Writes to the internal ports are bus cycles as any: the ACEX DCP sees them too (MAME cpu_io_w tap). Data out: D_O
 // / D_OE are pins too; D_OE = a write machine cycle of the T80 (from T1, as the bus model of tb_eq_acex; the data
 // are valid from the rise of T2).
@@ -86,7 +89,8 @@ module sp_z84c15 (
 	wire mreq_n, iorq_n, rd_n, wr_n, m1_n, rfsh_n, halt_n, wr_cyc;
 	wire [15:0] cpu_a;
 
-	T80pa cpu (.RESET_n(RESET_N), .CLK(CLK), .CEN_p(cen_p), .CEN_n(cen_n), .WAIT_n(WAIT_N), .INT_n(INT_N),
+	wire ctc_int;
+	T80pa cpu (.RESET_n(RESET_N), .CLK(CLK), .CEN_p(cen_p), .CEN_n(cen_n), .WAIT_n(WAIT_N), .INT_n(INT_N & ~ctc_int),
 		.NMI_n(NMI_N), .BUSRQ_n(1'b1), .M1_n(m1_n), .MREQ_n(mreq_n), .IORQ_n(iorq_n), .RD_n(rd_n), .WR_n(wr_n),
 		.RFSH_n(rfsh_n), .HALT_n(halt_n), .BUSAK_n(), .OUT0(1'b1), .A(cpu_a), .DI(cpu_di), .DO(cpu_do),
 		.R800_mode(1'b0), .REG(), .DIRSet(1'b0), .DIR(212'd0), .WRITE_CYC(wr_cyc));
@@ -123,10 +127,54 @@ module sp_z84c15 (
 		.RD_D(iord & sel_sio & (pa[1:0] == 2'd2)), .DI(D_O), .Q_C(sb_c), .Q_D(sb_d), .RX_D(RXB_D), .RX_STB(RXB_STB),
 		.RX_RDY(RXB_RDY), .CTS(CTSB), .DCD(DCDB), .WR5(WR5B), .RX_EN());
 
-	// ================= CTC: channel 0; 1-3 take writes and read FF
-	wire [7:0] ctc0;
+	// ================= CTC: CLK/TRG0-2 = TRG0 (AUD, 875 kHz), ZC/TO2 -> CLK/TRG3 (MAME sprinter.cpp:1993-2008)
+	wire [7:0] ctc0, ctc1, ctc2, ctc3;
+	wire [3:0] c_zc, c_ie, c_vwr, c_off;
 	sp_ctc_ch CTC0 (.CLK(CLK), .RESET(rst), .SYS_CE(cen_p), .WR(iowr & sel_ctc & (pa[1:0] == 2'd0)), .DI(D_O),
-		.TRG(TRG0), .Q(ctc0), .ZC(ZC0));
+		.TRG(TRG0), .Q(ctc0), .ZC(c_zc[0]), .IE(c_ie[0]), .VEC_WR(c_vwr[0]), .INT_OFF(c_off[0]));
+	sp_ctc_ch CTC1 (.CLK(CLK), .RESET(rst), .SYS_CE(cen_p), .WR(iowr & sel_ctc & (pa[1:0] == 2'd1)), .DI(D_O),
+		.TRG(TRG0), .Q(ctc1), .ZC(c_zc[1]), .IE(c_ie[1]), .VEC_WR(c_vwr[1]), .INT_OFF(c_off[1]));
+	sp_ctc_ch CTC2 (.CLK(CLK), .RESET(rst), .SYS_CE(cen_p), .WR(iowr & sel_ctc & (pa[1:0] == 2'd2)), .DI(D_O),
+		.TRG(TRG0), .Q(ctc2), .ZC(c_zc[2]), .IE(c_ie[2]), .VEC_WR(c_vwr[2]), .INT_OFF(c_off[2]));
+	sp_ctc_ch CTC3 (.CLK(CLK), .RESET(rst), .SYS_CE(cen_p), .WR(iowr & sel_ctc & (pa[1:0] == 2'd3)), .DI(D_O),
+		.TRG(c_zc[2]), .Q(ctc3), .ZC(c_zc[3]), .IE(c_ie[3]), .VEC_WR(c_vwr[3]), .INT_OFF(c_off[3]));
+	assign ZC0 = c_zc[0];
+
+	// ================= CTC interrupts (Z80 CTC): ZC/TO with IE -> pending (IP); channel n requests while IP and no
+	// channel 0..n is in service (IUS; the daisy chain inside the CTC, channel 0 first; the SIO / PIO never request).
+	// INTA: the winner (latched while no INTA, so it holds through the cycle) gives {V[7:3], n, 0}; at the end of
+	// INTA its IP -> 0, IUS -> 1. RETI (ED 4D in two opcode fetches, the bytes the T80 took) clears the first IUS.
+	reg  [3:0] ip = 4'd0, ius = 4'd0;
+	reg  [4:0] vec = 5'd0;
+	wire [3:0] req = ip & ~{|ius[3:0], |ius[2:0], |ius[1:0], ius[0]};
+	assign ctc_int = |req;
+	wire [1:0] win = req[0] ? 2'd0 : req[1] ? 2'd1 : req[2] ? 2'd2 : 2'd3;
+	wire inta = ~M1_N & ~IO_N;
+	reg  inta_q = 1'b0, ack_v = 1'b0;
+	reg  [1:0] ack_ch = 2'd0;
+	reg  [7:0] di_q = 8'hFF;
+	reg  ed_q = 1'b0;
+	wire opf = CE & ~M1_N & ~MR_N & ~RD_N & RD_N_NX;  // end of an opcode fetch; di_q = the byte the T80 took
+	wire reti = opf & ed_q & (di_q == 8'h4D);
+	wire [3:0] ius_first = ius & ~{ius[2:0], 1'b0} & ~{ius[1:0], 2'b0} & ~{ius[0], 3'b0};
+	integer k;
+	always @(posedge CLK) begin
+		if (CE_N) di_q <= cpu_di;
+		inta_q <= inta;
+		if (~inta) begin ack_v <= ctc_int; ack_ch <= win; end
+		if (rst) begin
+			ip <= 4'd0; ius <= 4'd0; vec <= 5'd0; ed_q <= 1'b0; ack_v <= 1'b0; ack_ch <= 2'd0;
+		end else begin
+			if (opf) ed_q <= (di_q == 8'hED);
+			if (c_vwr[0]) vec <= D_O[7:3];
+			if (reti) ius <= ius & ~ius_first;
+			if (inta_q & ~inta & ack_v) begin ip[ack_ch] <= 1'b0; ius[ack_ch] <= 1'b1; end
+			for (k = 0; k < 4; k = k + 1) begin
+				if (c_off[k]) ip[k] <= 1'b0;
+				if (c_zc[k] & c_ie[k]) ip[k] <= 1'b1;
+			end
+		end
+	end
 
 	// ================= PIO
 	wire [7:0] pioa, piob;
@@ -160,11 +208,11 @@ module sp_z84c15 (
 	reg [7:0] int_q;
 	always @* begin
 		int_q = 8'hFF;
-		if (sel_ctc & (pa[1:0] == 2'd0)) int_q = ctc0;
+		if (sel_ctc) case (pa[1:0]) 2'd0: int_q = ctc0; 2'd1: int_q = ctc1; 2'd2: int_q = ctc2; default: int_q = ctc3; endcase
 		if (sel_sio) case (pa[1:0]) 2'd0: int_q = sa_d; 2'd1: int_q = sa_c; 2'd2: int_q = sb_d; default: int_q = sb_c; endcase
 		if (sel_pio & (pa[1:0] == 2'd0)) int_q = pioa;
 		if (sel_pio & (pa[1:0] == 2'd2)) int_q = piob;
 		if (sel_scr) int_q = pa[0] ? scdp : scrp;
 	end
-	assign cpu_di = (~M1_N & ~IO_N) ? 8'hFF : int_sel ? int_q : D_I;
+	assign cpu_di = inta ? (ack_v ? {vec, ack_ch, 1'b0} : 8'hFF) : int_sel ? int_q : D_I;
 endmodule

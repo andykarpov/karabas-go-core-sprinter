@@ -6,7 +6,7 @@
 
 | Узел | Модуль | Примечание |
 |---|---|---|
-| Z84C15 | `sp_z84c15` (T80pa + SIO / CTC0 / PIO / SCRP) | такт `CLKZ1` + `CLKZ1_NX` (меняется только по `CE_N`, см. п. 2); `TRG0` = `AUD` (CT3) MAX, как на схеме (CLK/TRG0-2) |
+| Z84C15 | `sp_z84c15` (T80pa + SIO / CTC0-3 с прерываниями / PIO / SCRP) | такт `CLKZ1` + `CLKZ1_NX` (меняется только по `CE_N`, см. п. 2); `TRG0` = `AUD` (CT3) MAX, как на схеме (CLK/TRG0-2; ZC/TO2 → TRG3) |
 | ACEX 3.03a / k30 / SCROLL | `sp_acex` | `CFG_RST` / `CFG_DONE` (п. 4), `PERS_K30`, `PERS_SCROLL` (п. 3) |
 | MAX | `sp_max` | `/RESET` → `CONF_X_N` (в `sp_machine` через регистр, Ф1.4: путь для PAR), `CLKZZ`, `10K_CLK` / `10K_D0`; вход `RESET_N_I` ACEX = 1 (линию `/RESET` ведёт только ACEX, сброс MAX его стирает: `CFG_RST`) |
 | видео-ОЗУ, ROM, fastram, тень палитры | `sp_sram` | порт загрузчика ROM (`LD_*`) — наружу, к верху платы |

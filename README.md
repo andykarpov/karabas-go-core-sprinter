@@ -12,7 +12,7 @@ The PetersPlus Sprinter Sp2000 (Z84C15 at 21 MHz, Altera ACEX + MAX, 4 MB RAM, 2
 
 The core file is in `src/`. The BIOS is in it: **Sprinter BIOS 3.06 Hotfix 2**, the only supported BIOS version.
 
-Status: build 26112201. Checked on a Mini G board: BIOS 3.06 HF2 and SETUP, the CMOS clock, DSS 1.70 and Flex Navigator 1.15 from a hard disk image, DSS from a floppy image, the keyboard and the mouse, Thunder in the Deep (its own ACEX configuration, with scrolling and sound). The Go and Mini builds have not been run on a board.
+Status: build 26112202. Checked on a Mini G board: BIOS 3.06 HF2 and SETUP, the CMOS clock, DSS 1.70 and Flex Navigator 1.15 from a hard disk image, DSS from a floppy image, the keyboard and the mouse, Thunder in the Deep (its own ACEX configuration, with scrolling and sound), the games uwol and TMNTF (Z84C15 CTC interrupts). The Go and Mini builds have not been run on a board.
 
 ## Features
 
