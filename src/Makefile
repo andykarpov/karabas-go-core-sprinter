@@ -1,6 +1,6 @@
 # Sprinter Sp2000 core for Karabas Go / Mini / Mini G, ISE 14.7 (docs/minig.md).
 #
-#   make                  = make minig (Ф1: Mini G only; the Go / Mini tops come in Ф3)
+#   make                  = make minig; make go / make mini: the other boards (their tops come from tools/mktop.py)
 #   make minig            synthesis, implementation, bitstream, sprinter.kg (BIOS 3.06, the only one supported)
 #   make minig-xst        one step: <board>-xst (.ngc), <board>-impl (.bin), <board>-core (.kg)
 #   make minig-report     LUTs, slices, block RAMs and the timing result of the last build
@@ -25,7 +25,7 @@ SHELL = /bin/bash
 XIL = source $(ISE_SETTINGS) > /dev/null;
 
 PART = xc6slx25-ftg256-2
-BOARDS = minig
+BOARDS = go mini minig
 KG_DEFAULT = sprinter.kg
 KG ?= $(KG_DEFAULT)
 CMOS ?=
@@ -35,6 +35,8 @@ JSON = core.json
 ROM ?= $(HOME)/Downloads/karabas-sd-sprinter/roms/unreal-ng-2026-11-21/sp2k-3.06-hf2.rom
 ROM_KG = roms/kg/sp2k-3.06-hf2.rom
 # map / par as core-p4096; cost table 2 first (karabas-go-notes map-cost-table-2-first); -mt 2: the PC is shared
+MAP_T_go = 2
+MAP_T_mini = 2
 MAP_T_minig = 2
 MAP_OPT = -logic_opt off -ol high -xe n -xt 0 -register_duplication off -r 4 -global_opt off -mt 2 -detail -ir off -pr b -lc off -power off
 PAR_OPT = -ol high -xe n -mt 2
