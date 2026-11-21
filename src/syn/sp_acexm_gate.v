@@ -48,7 +48,7 @@ module sp_acexm_gate (
 	wire [7:0] d_o, vd0_o, vd1_o, vd2_o, vd3_o, vd0_i, vd1_i, vd2_i, vd3_i, cpu_q;
 	wire d_oe, cs_rom, cs_cash, cpu_rdy;
 	wire [17:14] ra; wire [3:0] v_wr, vd_oe, cas; wire [1:0] ras, mca; wire [15:0] va, md_q; wire [14:0] ma; wire [1:0] md_drv;
-	wire we, mode_rq, mlo_rq, atr_zx, pix_rq, sel_rom, sel_cash; wire [2:0] ct_ph;
+	wire we, mode_rq, mlo_rq, atr_zx, pix_rq, mode_fix, sel_rom, sel_cash; wire [2:0] ct_ph;
 	wire [17:1] va_nx, va_atr; wire [3:0] v_wr_nx; wire [15:0] va_mod;
 	wire cs_mem = ~cs_rom | (~cs_cash & (ra[17:16] == 2'b01));
 	wire [7:0] d_i = CPU_DOE ? CPU_DO : cs_mem ? cpu_q : 8'hFF;
@@ -64,11 +64,11 @@ module sp_acexm_gate (
 		.DAC_WS(DAC_WS), .DAC_BCK(DAC_BCK), .MD_I(md_i), .MD_O(MD_O), .MD_OE(MD_OE), .MA(ma), .RAS_(ras),
 		.CAS_(cas), .WE_N(we), .XACS(XACS), .XA_I(XA_I), .XA_O(XA_O), .XA_OE(XA_OE), .XA3(XA3), .SXA(SXA),
 		.RDXA(RDXA), .WR_AWG(WR_AWG), .RD_KMPS(RD_KMPS), .WR_DWG(WR_DWG), .CT_PH(ct_ph), .VA_NX(va_nx),
-		.V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx),
-		.PIX_RQ(pix_rq), .MCA(mca), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(1'b0));
+		.V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MODE_FIX(mode_fix), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx),
+		.PIX_RQ(pix_rq), .MCA(mca), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(1'b0), .PERS_SCROLL(1'b0));
 
 	sp_sram sram(.CLK(CLK), .CE(ce), .CE_N(ce_n), .CT(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx), .VA_MOD(va_mod),
-		.MODE_RQ(mode_rq), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .VD0_O(vd0_o),
+		.MODE_RQ(mode_rq), .MODE_FIX(mode_fix), .MLO_RQ(mlo_rq), .VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .VD0_O(vd0_o),
 		.VD1_O(vd1_o), .VD2_O(vd2_o), .VD3_O(vd3_o), .VA(va), .VD0_I(vd0_i), .VD1_I(vd1_i), .VD2_I(vd2_i),
 		.VD3_I(vd3_i), .PAL_Q(PAL_Q), .A(A), .RA(ra), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .RF_N(RF_N),
 		.MR_N(MR_N), .WR_N(WR_N), .CS_CASH(cs_cash), .CPU_D(d_i), .CPU_FLUSH(1'b0), .CPU_Q(cpu_q),

@@ -58,6 +58,15 @@
 //   /WE         DFFE(/WE_OUT | DECODE.RAS, CLK42, , /RESET)   DIR_PORT[4]   GND (SCREEN_OFF = "NOT_USE": no blanking)
 //   DCP: PN5 not set by CNF7 (PN[7..6].clrn); VIDEO2: WR_PIC.d = MODE0[5] in the mode slot.
 // PERS_K30 must change only while CFG_RST is high (the personality is chosen at a configuration load).
+//
+// karabas: personality SCROLL (PERS_SCROLL = 1): the Game Config of Ivan Mak (2002) for Thunder in the Deep
+// (upstream/tt-scroll-cnf/src, SCROLL.TDF; docs/versions.md). Its top is the 2.18 one (+ DIR_PORT[4] = RGMOD2 of 3.00)
+// with its own changes, without AY and mouse; DCP / ACCELER / KBD are those of 3.03a. Lines marked "SCROLL:":
+//   as k30: /RESET (no ALL_MODE5), NMI_X = GND, CAS_A, /WE, BLK_MR      KEYS.ena  !ALL_MODE0 (2.18)
+//   ZX_PORT[6] .. & ALL_MODE3 (3.03a: & !ALL_MODE0)                     AY/PORTS = FF, KEMPS = FF (no AY, no mouse)
+//   AY_CHS = (VCC, CBL_R[15..1]) (no AY in the sound)                   DCP: MEM[EE] = 2041; VIDEO2: the scroll grid
+// KEYS.int_ena, DIR_PORT[4] as 3.03a. PERS_SCROLL = 0 is 3.03a / k30 bit for bit; not both personalities at once;
+// it changes only while CFG_RST is high.
 module sp_acex (
 	input             CLK,
 	input             CE,           // CLK42 rising
@@ -135,6 +144,7 @@ module sp_acex (
 	output     [17:1] VA_ATR,       // VIDEO2: ZX attribute address (when ATR_ZX)
 	output            ATR_ZX,       // VIDEO2: MODE0[4]
 	output            PIX_RQ,       // VIDEO2: the pixel byte is taken at c8
+	output            MODE_FIX,     // VIDEO2: SCROLL sync jump, the mode table halves again
 	output      [1:0] MCA,          // DCP: A[1..0] of the DRAM access, from c2 to c12 (MCA1 = DRAM bank)
 	output            SEL_ROM,      // the current A / RA select the ROM (PRE_ROM / PRE_CASH, before /MR falls)
 	output            SEL_CASH,     // ... the cache (fastram)
@@ -146,7 +156,8 @@ module sp_acex (
 	// is a CE (as at power-up). Use only in if (CFG_RST): an unconnected port (old testbenches) reads as off.
 	input             CFG_RST,
 	output reg        CFG_DONE = 1'b0,
-	input             PERS_K30      // karabas: 1 = the k30 configuration (BIOS 3.05 / 3.06), 0 = 3.03a; see above
+	input             PERS_K30,     // karabas: 1 = the k30 configuration (BIOS 3.05 / 3.06), 0 = 3.03a; see above
+	input             PERS_SCROLL   // karabas: 1 = the SCROLL configuration (Thunder in the Deep); see above
 );
 	parameter MIF_DCP = "dcp.hex";
 	parameter MIF_AY  = "ay.hex";
@@ -275,6 +286,8 @@ module sp_acex (
 	wire cash_en_d  = A[6:0] == 7'b1111011;                            // 7B / FB
 	wire rom5c_d    = A[7:0] == 8'h5C;
 
+	wire p218 = PERS_K30 | PERS_SCROLL;   // the 2.18 forms of k30 and SCROLL (/RESET, NMI_X, CAS_A, /WE, BLK_MR)
+
 	// ================= effective values of the registers with asynchronous inputs
 	wire [7:0] all_mode_e = reset_n ? all_mode : 8'hFF;               // prn = /RESET
 	wire       kint_ena   = all_mode_e[0] & (~PERS_K30 | all_mode_e[3]); // KEYS.int_ena (K30: ALL_MODE0 & ALL_MODE3)
@@ -288,7 +301,8 @@ module sp_acex (
 	wire       sr_s2_e    = reset_n & sr_s2;
 	wire [1:0] soft_e     = sr_s2_e ? 2'd3 : soft_q;                   // SOFT_RES[].prn = !DFF(..)
 	wire       soft_reset = soft_e == 2'd0;
-	wire       rst_d      = (kb_reset | (~PERS_K30 & ~all_mode_e[5])) & soft_reset;   // TDF:300 (K30: no ALL_MODE5 gate)
+	wire       rst_d      = (kb_reset | (~p218 & ~all_mode_e[5])) & soft_reset;   // TDF:300 (K30, SCROLL: no ALL_MODE5 gate)
+	wire       kena       = PERS_K30 | (PERS_SCROLL ? ~all_mode_e[0] : all_mode_e[1]);   // KEYS.ena (K30: VCC, SCROLL: !ALL_MODE0)
 	wire       cs_isa     = MR_N | cs_isa_q;                           // prn = LCELL(Q or !/MR)
 	wire       cs_romt    = MR_N | cs_romt_q;
 	wire       cs_casht   = MR_N | cs_casht_q;
@@ -322,7 +336,8 @@ module sp_acex (
 	wire blk_mwr2 = dc_ram | blk_mem;
 
 	// ================= data paths (TDF:363-431)
-	wire [7:0] kemps = ({A[10], A[8]} == 2'b01) ? ms_x[7:0] : ({A[10], A[8]} == 2'b11) ? ~ms_y[7:0] :
+	wire [7:0] kemps = PERS_SCROLL ? 8'hFF :                                 // SCROLL: no mouse, KEMPS = FF
+	                   ({A[10], A[8]} == 2'b01) ? ms_x[7:0] : ({A[10], A[8]} == 2'b11) ? ~ms_y[7:0] :
 	                   {6'b111111, ~ms_k[0], ~ms_k[1]};
 	wire       cbl_mode = cbl_xx[7], cbl_stereo = cbl_xx[6], cbl_mode16 = cbl_xx[5], cbl_int_ena = cbl_xx[4];
 	wire [7:0] cbl_cnt_e = cbl_mode ? cbl_cnt : 8'd0;                 // clrn = CBL_MODE
@@ -330,7 +345,7 @@ module sp_acex (
 	wire       cbl_ind = cbl_cnt_e[7] ^ cbl_wa_e[7];
 	wire [7:0] key_kems = type_[0] ? kemps :
 	                      {(kbo[5] & ~cbl_mode) | (cbl_ind & cbl_mode), tape_in, cbl_mode & ctv[8], kbo[4:0]};
-	wire [7:0] ay_ports = type_[0] ? ay_do : dc_do;
+	wire [7:0] ay_ports = type_[0] ? (PERS_SCROLL ? 8'hFF : ay_do) : dc_do;   // SCROLL: no AY, AY/PORTS = FF
 	reg  [7:0] pdd;
 	always @* case (type_[2:1])
 		2'b11: pdd = mdp;
@@ -353,9 +368,9 @@ module sp_acex (
 	// ================= DRAM strobes (TDF:858-898)
 	wire video_pg = page[7:4] == 4'b0101;
 	wire blk_mr_d = video_pg & (page[2] | (page[3] & acc_gliss));
-	wire blk_mr = PERS_K30 ? blk_mr_d : blk_mr_q;                     // K30: BLK_MR = LCELL(..)
+	wire blk_mr = p218 ? blk_mr_d : blk_mr_q;                         // K30, SCROLL: BLK_MR = LCELL(..)
 	wire we_out = mc_write | blk_mr | blk_mwr2;                      // /WE_OUT
-	wire cas_a  = PERS_K30 ? dc_cas : dc_cas | cwh_q;                // K30: CAS_A = LCELL(DECODE.CAS)
+	wire cas_a  = p218 ? dc_cas : dc_cas | cwh_q;                    // K30, SCROLL: CAS_A = LCELL(DECODE.CAS)
 	wire casxe0 = ~mca[0] | dcas, casxe1 = mca[0] | dcas;
 	assign CAS_ = {cas_a | ~((mca[1] & casxe1) | mc_type), cas_a | ~((mca[1] & casxe0) | mc_type),
 	               cas_a | ~((~mca[1] & casxe1) | mc_type), cas_a | ~((~mca[1] & casxe0) | mc_type)};
@@ -363,7 +378,7 @@ module sp_acex (
 	wire dw_clr = we_out | dc_ras;                                    // DRAM_WRITE.clrn = !/WE_OUT & !RAS
 	wire dw_e   = ~dw_clr & dw_q;
 	wire we_e   = ~reset_n | we_q;
-	assign WE_N = PERS_K30 ? we_e : ~dw_e;
+	assign WE_N = p218 ? we_e : ~dw_e;                                // K30, SCROLL: DFFE(.., CLK42, , /RESET)
 	wire wr_port = ~(IO_N | WR_N) & mctd_q;
 	assign MD_O  = acc_mdo;                                           // DMDX = ACC.MDO[7..0]
 	assign MD_OE = ~we_out | wr_port;
@@ -379,7 +394,7 @@ module sp_acex (
 	wire cint_set = ~(cbl_int_ena & (IO_N | M1_N));                  // CBL_INT.prn
 	wire cint_e  = cint_set | cint_q;
 	wire int_x   = ~ix_e | ~cint_e;
-	wire nmi_x   = ~PERS_K30 & ~all_mode_e[4] & kb_alt & ~kb_f12;    // K30: NMI_X = GND
+	wire nmi_x   = ~p218 & ~all_mode_e[4] & kb_alt & ~kb_f12;        // K30, SCROLL: NMI_X = GND (NMI_ON = "OFF")
 	wire [7:0] all_mode_nx = ~reset_n ? 8'hFF : (iowr_ev & am_en_d) ? d_bus : all_mode;
 	wire iclk    = intt & k_int;
 	wire iclk_nx = intt_nx & (~(all_mode_nx[0] & (~PERS_K30 | all_mode_nx[3])) | k_int_qnx);   // KEYS.int_ena next
@@ -395,7 +410,8 @@ module sp_acex (
 	wire s2m_d   = ~(sinc_hold[8:5] == 4'hF);
 
 	// ================= sound (TDF:1066-1222)
-	wire [10:0] ay_full_d = cth0d_q ? {ay_r, 1'b0} : {ay_l, 1'b0};
+	wire [10:0] ay_full_d = PERS_SCROLL ? 11'd0 :                     // SCROLL: AY_CHS = (VCC, CBL_R[15..1])
+	                        cth0d_q ? {ay_r, 1'b0} : {ay_l, 1'b0};
 	wire        ayc_d     = cth[1] & (cth[0] | ~ct[5]);
 	wire        ay_chs_ev = ayc_q & ~ayc_d;                           // AY_CHS[].clk = !DFF(..)
 	wire        audio_en  = ~ct[2] & bck_q;                           // !CT2 & DFF(CT2)
@@ -457,6 +473,8 @@ module sp_acex (
 
 	// ================= video (TDF:978-1045)
 	wire gliss    = acc_gliss & page[3] & video_pg;
+	// ZX_PORT[6]: the ZX screen copy into the video RAM; SCROLL: enabled by ALL_MODE3 (3.03a: disabled by ALL_MODE0)
+	wire zx_wen   = sp_scr & ~(A[13] & ~acc_gline[7]) & ~acc_gline[6] & (PERS_SCROLL ? all_mode_e[3] : ~all_mode_e[0]);
 
 	// ================= registers
 	always @(posedge CLK) begin
@@ -637,14 +655,14 @@ module sp_acex (
 
 	// ================= submodules
 	sp_video2 SVIDEO(.CLK(CLK), .CE(CE), .CE_N(CE_N), .CT(ct), .CTH(cth), .CTV(ctv), .CTF(ctf), .BLANK(v_blank),
-		.COPY_SINC_H(copyh_q), .COPY_SINC_V(copyv_q), .WR(svwr_e), .VAI({ga, acc_ao[9:0]}), .MDI(acc_mdo),
+		.COPY_SINC_H(copyh_q), .COPY_SINC_V(copyv_q), .COPY_SINC_H_NX(copyh_d), .COPY_SINC_V_NX(copyv_d), .WR(svwr_e), .VAI({ga, acc_ao[9:0]}), .MDI(acc_mdo),
 		.DOUBLE_CAS(dcas), .VAO(vao), .VDO0(vdo0), .VDO1(vdo1), .VDO2(vdo2), .VDO3(vdo3),
 		.VDM0(vd0), .VDM1(vd1), .VDM2(vd2), .VDM3(vd3), .V_WR(v_wr), .V_WEN(v_wen), .V_CS(v_cs), .WR_PIX(wr_pix),
-		.ZX_PORT({sp_sa, sp_scr & ~(A[13] & ~acc_gline[7]) & ~acc_gline[6] & ~all_mode_e[0], acc_gline[5:0]}),
+		.ZX_PORT({sp_sa, zx_wen, acc_gline[5:0]}),
 		.DIR_PORT({border[2:0], rgmod_e[2] & ~PERS_K30, rgmod_e[0], 2'b00, scr128}), .INTT(intt),   // K30: [4] = GND
 		.CT_NX(ct_nxr), .CTH_NX(cth_nxr), .INTT_NX(intt_nx),
 		.VA_NX(VA_NX), .V_WR_NX(V_WR_NX), .VA_MOD(VA_MOD), .MODE_RQ(MODE_RQ), .MLO_RQ(MLO_RQ), .VA_ATR(VA_ATR),
-		.ATR_ZX(ATR_ZX), .PIX_RQ(PIX_RQ), .CFG_RST(CFG_RST), .PERS_K30(PERS_K30));
+		.ATR_ZX(ATR_ZX), .PIX_RQ(PIX_RQ), .MODE_FIX(MODE_FIX), .CFG_RST(CFG_RST), .PERS_K30(PERS_K30), .PERS_SCROLL(PERS_SCROLL));
 
 	sp_dcp #(.MIF_HEX(MIF_DCP), .REFRESH_REG(1)) DECODE(.CLK(CLK), .CE(CE), .CE_N(CE_N), .RESET_N(reset_n), .RES_N(), .CT(ct[2:0]),
 		.CONTINUE(acc_cont), .RAS(dc_ras), .CAS(dc_cas), .MC_END(mc_end), .MC_BEGIN(mc_begin), .MC_TYPE(mc_type),
@@ -657,7 +675,8 @@ module sp_acex (
 		.SP_SCR(sp_scr), .SP_SA(sp_sa), .SCR128(scr128), .TEST_R(1'b0), .HDD_DATA(hdd_data), .HDD_FLIP(hdd_flip),
 		.RAM(dc_ram), .BLK_R(blk_r), .PN4Q(pn4q), .ACC_ON(acc_on), .DCPP(dcpp), .DCAS_FALL_EV(dcas_fall),
 		.BLK_MEM(blk_mem), .IOMM_N_NX(iomm_n_nx), .IOM_N_NX(iom_n_nx), .RAS_NX(ras_nx), .MC_TYPE_NX(mc_type_nx),
-		.CLK_Z80_NX(clk_z80_nx), .TYPE_NX(type_nx), .HDD_DATA_NX(hdd_data_nx), .CFG_RST(CFG_RST), .PERS_K30(PERS_K30));
+		.CLK_Z80_NX(clk_z80_nx), .TYPE_NX(type_nx), .HDD_DATA_NX(hdd_data_nx), .CFG_RST(CFG_RST), .PERS_K30(PERS_K30),
+		.PERS_SCROLL(PERS_SCROLL));
 
 	sp_acceler ACC(.CLK(CLK), .CE(CE), .CE_N(CE_N), .RESET_N(reset_n), .CT(ct[2:0]), .CAS(dc_cas),
 		.CLK_Z80_EV(~clk_z80 & clk_z80_nx), .CONTINUE(acc_cont), .MC_END(mc_end), .MC_TYPE(mc_type), .AI(A),
@@ -671,7 +690,7 @@ module sp_acex (
 		.AY_CH_L(ay_l), .AY_CH_R(ay_r), .AY_CH_VAL(), .BEEPER(border[4]), .CFG_RST(CFG_RST));
 
 	sp_kbd #(.MIF_HEX(MIF_KBD)) KEYS(.CLK(CLK), .CE(CE), .CLK_K_EV(clk_k_ev), .KBD_CC(kbd_cc), .KBD_DD(kbd_dd),
-		.RF_N(keys_rf), .IO_N(key_io), .A(A[15:8]), .ENA(PERS_K30 | all_mode_e[1]), .INT_ENA(kint_ena), .KBO(kbo),
+		.RF_N(keys_rf), .IO_N(key_io), .A(A[15:8]), .ENA(kena), .INT_ENA(kint_ena), .KBO(kbo),
 		.KB_RESET(kb_reset), .KB_F12(kb_f12), .KB_CTRL(kb_ctrl), .KB_ALT(kb_alt), .KB_SH(kb_sh), .INT(k_int),
 		.KB_F12_NX(kb_f12_nx), .KB_CTRL_NX(kb_ctrl_nx), .KB_ALT_NX(kb_alt_nx), .KB_SH_NX(kb_sh_nx),
 		.INT_Q_NX(k_int_qnx), .CFG_RST(CFG_RST));

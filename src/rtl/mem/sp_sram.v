@@ -15,7 +15,8 @@
 //   A  [1,3] [3,5]  ZX attribute by VA_ATR (ATR_ZX) or [5,7] by VA_NX at c5 (the only one for graphics); at c5
 //                   a ZX attribute fetched by VA_ATR is fetched again when VA_NX turned out different
 //   MH / ML         mode table halves (bytes 3,2 / 1,0) by VA_MOD in [1,3]..[9,11] (MODE_RQ; ML also MLO_RQ, from
-//                   c3); they take a slot before the CPU only when the rest of the cycle would not hold them
+//                   c3); they take a slot before the CPU only when the rest of the cycle would not hold them;
+//                   MODE_FIX (SCROLL: a sync jump moved the address) at a slot edge: both halves again
 //   C               ROM / fastram read for the CPU, speculative: on a change of A (not in refresh), or of RA / SEL_*
 //   B               the cache write buffer (1 byte, captured at the fall of /WR), L the loader: free slots only
 //                   (a loader write to the word fetched for the CPU makes it fetch again: the ROM loaded under
@@ -43,6 +44,7 @@ module sp_sram #(
 	input       [3:0] V_WR_NX,
 	input      [15:0] VA_MOD,
 	input             MODE_RQ,
+	input             MODE_FIX,     // the mode table address of this cycle moved (SCROLL sync jump): both halves again
 	input             MLO_RQ,
 	input      [17:1] VA_ATR,
 	input             ATR_ZX,
@@ -112,8 +114,9 @@ module sp_sram #(
 	reg [17:1] a_addr = 17'd0;
 	wire       a_fix  = (e == 4'd5) & (~a_done | (a_atr & (VA_NX != a_addr)));
 	wire       a_early = ATR_ZX & ~a_done & ((e == 4'd1) | (e == 4'd3));
-	wire       mh_ok  = MODE_RQ & ~mh_done & (e >= 4'd1) & (e <= 4'd9);
-	wire       ml_ok  = ((MODE_RQ & (e >= 4'd1)) | (MLO_RQ & (e >= 4'd3))) & ~ml_done & (e <= 4'd9);
+	wire       m_fix  = MODE_FIX & slot;  // the halves taken so far are stale
+	wire       mh_ok  = MODE_RQ & (~mh_done | m_fix) & (e >= 4'd1) & (e <= 4'd9);
+	wire       ml_ok  = ((MODE_RQ & (e >= 4'd1)) | (MLO_RQ & (e >= 4'd3))) & (~ml_done | m_fix) & (e <= 4'd9);
 	// M is urgent when the slots left up to c9 (minus P at c3 and A by c5 still to come) are no more than the halves
 	// pending: at c1 4 - P - A >= 2, at c3 3 - A >= 2, at c5 2: never; at c7 1 (both pending), at c9 0 (any)
 	wire       m_urg  = ((e == 4'd7) & mh_ok & ml_ok) | ((e == 4'd9) & (mh_ok | ml_ok));
@@ -291,6 +294,7 @@ module sp_sram #(
 			if (g != G_NONE) sa <= g_a;
 			oe_n <= (g_be != 2'b00) ? 2'b11 : 2'b00;
 			if (g_be != 2'b00) w1 <= 1'b1;
+			if (m_fix) begin mh_done <= 1'b0; ml_done <= 1'b0; end   // (a half taken at this edge: the case below)
 			// data and lanes of the write this slot would make (not on the grant: a write slot is W at c11, else B,
 			// else L; the data is not driven in a read slot)
 			sd_o <= sd_n;

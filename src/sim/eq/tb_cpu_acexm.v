@@ -59,7 +59,14 @@ module tb_cpu_acexm;
 	always @(vd0) vd0_k = keep(vd0_k, vd0); always @(vd1) vd1_k = keep(vd1_k, vd1);
 	always @(vd2) vd2_k = keep(vd2_k, vd2); always @(vd3) vd3_k = keep(vd3_k, vd3);
 
-	BASE_303 ref(.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
+	// -DSCROLL: the SCROLL netlist (same port names) with PERS_SCROLL = 1, our DCP MEM from MIF_DCP_HEX (run_cpu_acexm.sh
+	// with REF=SCROLL)
+`ifdef SCROLL
+	SCROLL ref(
+`else
+	BASE_303 ref(
+`endif
+		.TG42(clk42), .CLKZ1(clkz_r), .\/WAIT (wait_w), .\/RESET (res_w), .\/M1 (m1_n), .\/RF (rf_n),
 		.\/IO (io_n), .\/WR (wr_n), .\/RD (rd_n), .\/MR (mr_n), .\/HALT (1'b1), .A(a), .D(d), .CS_ROM(cs_rom_r),
 		.CS_CASH(cs_cash_r), .RA(ra_r), .V_CS(v_cs_r), .VA(va_r), .V_WR(v_wr_r), .VD3(vd3), .VD2(vd2), .VD1(vd1),
 		.VD0(vd0), .WR_COL(wr_col_r), .DAC_DATA(dac_data_r), .DAC_WS(dac_ws_r), .DAC_BCK(dac_bck_r), .MD(md),
@@ -72,6 +79,11 @@ module tb_cpu_acexm;
 	wire xa_oe_r = ref.\XA[2]~output .oe;
 	wire res_oe_r = ~ref.\/RESET~output .i;          // open drain
 	wire wait_oe_r = ref.\/WAIT~output .oe;
+`ifdef SCROLL
+	wire cwh_r = 1'b0;                                 // no CAS_WRITE_HOLD in SCROLL
+`else
+	wire cwh_r = ref.CAS_WRITE_HOLD.q;
+`endif
 
 	// ---- ours
 	wire clkz_o, clkz_nx_o, wait_oe_o, res_oe_o, cs_rom_o, cs_cash_o, wr_col_o, dac_data_o, dac_ws_o, dac_bck_o, we_o, xacs_o;
@@ -79,8 +91,11 @@ module tb_cpu_acexm;
 	wire [3:0] ra_o, v_wr_o, cas_o, vd_oe_o; wire [1:0] v_cs_o, ras_o; wire [15:0] va_o, md_o; wire [14:0] ma_o;
 	wire [7:0] d_o, vd0_o, vd1_o, vd2_o, vd3_o; wire [2:0] xa_o;
 	wire [2:0] ct_ph; wire [17:1] va_nx, va_atr; wire [3:0] v_wr_nx; wire [15:0] va_mod; wire [1:0] mca_o;
-	wire mode_rq, mlo_rq, atr_zx, pix_rq, sel_rom, sel_cash;
-	sp_acex #(.MIF_DCP("../../rtl/acex/mif/dcp.hex"), .MIF_AY("../../rtl/acex/mif/ay.hex"),
+	wire mode_rq, mlo_rq, atr_zx, pix_rq, mode_fix, sel_rom, sel_cash;
+`ifndef MIF_DCP_HEX
+`define MIF_DCP_HEX "../../rtl/acex/mif/dcp.hex"
+`endif
+	sp_acex #(.MIF_DCP(`MIF_DCP_HEX), .MIF_AY("../../rtl/acex/mif/ay.hex"),
 		.MIF_KBD("../../rtl/acex/mif/kbd_ini2.hex")) dut(.CLK(clk), .CE(ce), .CE_N(ce_n),
 		.M1_N(m1_n), .RF_N(rf_n), .IO_N(io_n), .WR_N(wr_n), .RD_N(rd_n), .MR_N(mr_n),
 		.M1_N_NX(m1_nx), .RF_N_NX(rf_nx), .IO_N_NX(io_nx), .WR_N_NX(wr_nx), .RD_N_NX(rd_nx), .MR_N_NX(mr_nx),
@@ -92,7 +107,7 @@ module tb_cpu_acexm;
 		.WE_N(we_o), .XACS(xacs_o), .XA_I(xa), .XA_O(xa_o), .XA_OE(xa_oe_o), .XA3(xa3), .SXA(sxa_o),
 		.RDXA(rdxa_o), .WR_AWG(wr_awg_o), .RD_KMPS(rd_kmps_o), .WR_DWG(wr_dwg_o),
 		.CT_PH(ct_ph), .VA_NX(va_nx), .V_WR_NX(v_wr_nx), .VA_MOD(va_mod), .MODE_RQ(mode_rq), .MLO_RQ(mlo_rq),
-		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V));
+		.VA_ATR(va_atr), .ATR_ZX(atr_zx), .PIX_RQ(pix_rq), .MODE_FIX(mode_fix), .MCA(mca_o), .SEL_ROM(sel_rom), .SEL_CASH(sel_cash), .CFG_RST(1'b0), .PERS_K30(`PERS_K30_V), .PERS_SCROLL(`PERS_SCROLL_V));
 	// power-up: the modules start their preset registers high, as the netlist (CTH = 50, CTV = 290, KB_CT = 7 ...)
 	// our pins as the reference's pins would be
 	// D / MD compared where the ACEX drives them (the memories answer at other times than the ideal models)
@@ -269,7 +284,7 @@ module tb_cpu_acexm;
 	always @(negedge clk) if (dbg_t >= 0 && $time >= dbg_t && $time < dbg_t + 600)
 		$display("%0d ce_n=%b ct=%0d io%b rd%b mr%b m1%b wr%b d %h | ras %b cas %b md %h | o: cas %b cwh %b mcw %b mct %b mdo %h mce %b ado %h dcpp %h | r: cas %b cwh %b mdo %h dcpp %h",
 			$time, ce_n, dut.ct[2:0], io_n, rd_n, mr_n, m1_n, wr_n, d, ras_r[0], cas_r, md, dut.dc_cas, dut.cwh_q, dut.mc_write, dut.mc_type, dut.acc_mdo, dut.mc_end, dut.acc_do, dut.dcpp,
-			ref.\DECODE|CAS .q, ref.CAS_WRITE_HOLD.q,
+			ref.\DECODE|CAS .q, cwh_r,
 			ref.\ACC|MDO ,
 			{ref.\DECODE|DCPP[7] .q, ref.\DECODE|DCPP[6] .q, ref.\DECODE|DCPP[5] .q, ref.\DECODE|DCPP[4] .q,
 			 ref.\DECODE|DCPP[3] .q, ref.\DECODE|DCPP[2] .q, ref.\DECODE|DCPP[1] .q, ref.\DECODE|DCPP[0] .q});
@@ -554,7 +569,13 @@ module tb_cpu_acexm;
 			// of a column, the last lines of the two glyph columns, the last line of the last fill column
 			e(8'hA4); e(8'hD0); e(8'hFF); e(8'h80); e(8'h01); e(8'h5A); e(8'hE4);
 		end else begin
+`ifdef SCROLL
+			// SCROLL (observed): one IM 1 interrupt more before DI, INTA 3 instead of 2 (its INTT is the fall of INTTX,
+			// not the line CTV[2..0] = 7); the SCROLL netlist does the same (equivalence 0)
+			e(8'hA0); e(8'h38); e(8'h38); e(8'h01); e(8'hA1); e(8'h22); e(8'h02); e(8'hE1);
+`else
 			e(8'hA0); e(8'h38); e(8'h01); e(8'hA1); e(8'h22); e(8'h02); e(8'hE1);
+`endif
 			sinc_lo = 2 * 96;
 		end
 
@@ -571,7 +592,7 @@ module tb_cpu_acexm;
 		while (!done && $time < t_end) @(posedge clk);
 		repeat (200) @(posedge clk);
 		ld_run = 0; repeat (40) @(posedge clk);
-		$display("tb_cpu_acexm (sp_z84c15 on BASE_303 and on sp_acex + sp_sram + sp_sdram, scenario %0d), %0d us simulated%0s:", scen,
+		$display("tb_cpu_acexm (sp_z84c15 on %0s and on sp_acex + sp_sram + sp_sdram, scenario %0d), %0d us simulated%0s:", `PERS_NAME, scen,
 			$time / 1000, done ? "" : ", PROGRAM DID NOT END");
 		if (!done) errors = errors + 1;
 		clkz_report; wait_oe_report; res_oe_report; cs_report; ra_report; d_oe_report; d_pin_report; ma_report;

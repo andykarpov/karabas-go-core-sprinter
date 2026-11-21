@@ -3,13 +3,19 @@
 # usage: run_eq.sh [kbd ...] [+frame]   (acexm: not in the default set)   (default: all; +frame = whole frames where a test supports it, minutes); builds the reference netlists when missing (docs/refsim.md)
 # k30 personality (PERS_K30 = 1 against the k30 netlists, docs/versions.md): dcp_k30 video2_k30 acex_k30 acexm_k30
 #   (not in the default set); acex_k30_mut: each k30 line forced back to 3.03a must fail.
-# SCEN="0 2": the scenarios of acex / acexm / acex_k30 / acexm_k30, one after another (unset: all three in parallel).
+# SCROLL personality (PERS_SCROLL = 1 against the SCROLL netlists of upstream/tt-scroll-cnf/src, docs/versions.md):
+#   dcp_scroll video2_scroll acex_scroll acexm_scroll (not in the default set); video2_scroll_mut, acex_scroll_mut:
+#   each SCROLL line forced back to 3.03a must fail; dcp_scroll +mut by hand (vvp -n build/tb_eq_dcp_scroll.vvp +mut).
+# SCEN="0 2": the scenarios of acex / acexm / acex*_k30 / acex*_scroll, one after another (unset: all three in parallel).
 set -eu
 cd "$(dirname "$0")"
 S=${QUARTUS_SIM_LIB:-/opt/altera/quartus/eda/sim_lib}
 R=../ahdl
 mkdir -p build
 K30=$R/build/src_k30/src/altera/acex/k30
+SCR=$(cd ../../../upstream/tt-scroll-cnf/src && pwd)   # SCROLL: the game config (docs/versions.md)
+# the SCROLL DCP.MIF as a $readmemh file (word EE = 2041)
+dhex() { [ -s build/dcp_scroll.hex ] || python3 -I ../../../tools/mif.py hex "$SCR/DCP.MIF" build/dcp_scroll.hex >/dev/null; echo "$PWD/build/dcp_scroll.hex"; }
 ref() { [ -s "$R/build/$1/simulation/modelsim/$2.vo" ] || "$R/build_ref.sh" "$3" "$2" "$1" >/dev/null; echo "$R/build/$1/simulation/modelsim/$2.vo"; }
 # the k30 sources are extracted by build_ref.sh K30 (the whole ACEX); modules from that directory
 refk() { [ -d "$K30" ] || "$R/build_ref.sh" K30 SP2_ACEX K30 >/dev/null; ref "$1" "$2" "$PWD/$K30"; }
@@ -62,6 +68,27 @@ for t in $T; do
 			build acexm -I. "$(ref BASE_303 BASE_303 303A)" $ACEX $MEM
 			scen acexm ;;
 		dcp_k30) run dcp -o dcp_k30 -DK30 "$(refk DCPK30 DCP)" $A/sp_dcp.v ;;
+		dcp_scroll) run dcp -o dcp_scroll -DSCROLL "$(ref DCPSCR DCP "$SCR")" $A/sp_dcp.v ;;
+		video2_scroll) run video2 -o video2_scroll -DSCROLL "$(ref VIDSCR VIDEO2 "$SCR")" $A/sp_video2.v ;;
+		video2_scroll_mut) # mutations: one SCROLL line back to 3.03a (tb_eq_video2.v +mut=N); each must give errors
+			build video2 -o video2_scroll -DSCROLL "$(ref VIDSCR VIDEO2 "$SCR")" $A/sp_video2.v
+			for m in ${MUT:-1 2 3 4 5 6 7}; do
+				r=$(vvp -n build/tb_eq_video2_scroll.vvp +mut=$m 2>&1 | grep 'tb_eq_video2:')
+				case "$r" in *": 0 errors"*) echo "mutation $m: NOT caught";; *) echo "mutation $m: caught: $r";; esac
+			done ;;
+		acex_scroll) # sp_acex with PERS_SCROLL = 1 against the SCROLL netlist (our DCP MEM from the SCROLL DCP.MIF)
+			build acex -o acex_scroll -DSCROLL "-DMIF_DCP_HEX=\"$(dhex)\"" "$(ref SCROLL SCROLL SCROLL)" $ACEX
+			scen acex_scroll ;;
+		acexm_scroll)
+			build acexm -o acexm_scroll -DSCROLL "-DMIF_DCP_HEX=\"$(dhex)\"" -I. "$(ref SCROLL SCROLL SCROLL)" $ACEX $MEM
+			scen acexm_scroll ;;
+		acex_scroll_mut) # mutations: one SCROLL line back to 3.03a (tb_eq_acex.v +mut=N:scenario); each must give errors
+			build acex -o acex_scroll -DSCROLL "-DMIF_DCP_HEX=\"$(dhex)\"" "$(ref SCROLL SCROLL SCROLL)" $ACEX
+			for m in ${MUT:-1:2 2:0 3:0 4:0 5:0 6:2 7:2 8:0 9:0 10:0}; do
+				r=$(vvp -n build/tb_eq_acex_scroll.vvp +scen=${m#*:} +mut=${m%:*} +stop 2>&1 | grep 'tb_eq_acex:\|first mismatch')
+				case "$r" in *" 0 errors"*) echo "mutation ${m%:*} (scenario ${m#*:}): NOT caught";;
+					*) echo "mutation ${m%:*} (scenario ${m#*:}): caught: $(echo "$r" | head -1)";; esac
+			done ;;
 		video2_k30) run video2 -o video2_k30 -DK30 "$(refk VIDK30 VIDEO2)" $A/sp_video2.v ;;
 		acex_k30) # sp_acex with PERS_K30 = 1 against the k30 netlist (top SP2_ACEX)
 			build acex -o acex_k30 -DK30 "$(ref K30 SP2_ACEX K30)" $ACEX

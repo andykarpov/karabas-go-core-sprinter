@@ -28,7 +28,7 @@
 
 ## 3. Загрузка ROM
 
-- `core.json` `"roms"`: `roms/kg/sp2k-3.06.rom` по адресу 0 (256 КБ; до 26112106 — 3.04). Образ в git не лежит (`docs/roms.md`): `make minig` копирует его из `$(ROM)` (по умолчанию `~/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom` = MAME `187f4382`) в `src/roms/kg/` (в `.gitignore`); без файла — ошибка с подсказкой.
+- `core.json` `"roms"`: `roms/sp2k-3.06-hf2.rom` по адресу 0 (256 КБ; BIOS 3.06 Hotfix 2, «Релиз 19.01.2026», CRC `9aa7bb29`; до 26112106 — 3.04, затем 3.06 `187f4382`). Образ лежит в git (с 26112201, решение пользователя; из [unreal-ng](https://github.com/alfishe/unreal-ng/tree/master/data/rom/sprinter)); `src/sprinter.kg` (все три платы) тоже в git, как у других ядер.
 - МК грузит ROM через `kg_l2_load` (вид 0) байтами, не чаще одного на 250 нс. `sp_ld_bridge`: байт `b` → слово `0x040000 + b[17:1]` SRAM, байт слова по `b[0]` (0 = `D[7:0]`), FIFO 16, порт загрузчика `sp_sram` (свободные слоты; пока машина в сбросе, их почти все). `LD_READY` = 1, `CAPS` = 0.
 - Сброс машины (`EPM_RES_N` = кнопка RESET оригинала: MAX `/RESET`, ACEX стёрт, BIOS заливает конфигурацию заново): с включения до конца первой загрузки ROM, на время загрузки ROM, пока МК `BUSY`, пока мост не пуст, по OSD Reset и кнопке платы 1. Затем MAX отпускает `/RESET` (по кадровому синхроимпульсу), ЦПУ исполняет загрузчик ACEX из ROM `0x30000` (~0,48 с), ACEX стартует, BIOS — со страницы 8.
 
@@ -85,7 +85,7 @@ cd src && make minig-pack ROM=$HOME/Downloads/karabas-sd-sprinter/roms/mame-name
 
 Сборка **26112105** на плате (2026-11-21): 84 МГц выполнены, 64 % LUT, 87 % слайсов. `sprinter306.kg`: POST BIOS 3.06 («Ядро 1K30 v3.05» — личность k30 выбрана по хешу `5aa954b6`), CMOS найден, время верное, IDE master; DSS 1.62 (`sp_dss162_boot.img`) → Flex Navigator 1.13.1; DSS 1.70 (`sp_dss306.img`, 132 МБ, `tools/mkhdd.py`) → Flex Navigator 1.15, часы и мышь.
 
-Сборка **26112101** (Mini G, `src/karabas_minig.bin`, `src/sprinter.kg` с BIOS 3.04 внутри; `.kg` в git не идёт — в нём ROM):
+Сборка **26112101** (Mini G, `src/karabas_minig.bin`, `src/sprinter.kg` с BIOS 3.04 внутри):
 
 | | |
 |---|---|
@@ -121,3 +121,14 @@ XST: тристабильных буферов нет, автоматов (FSM) 
 7. Если «зависает» после чёрного кадра: в OSD журнале МК проверить, что ROM загружен (вид 0, 262 144 байт); при неполной загрузке машина ждёт в сбросе (`rom_loaded`).
 
 Не проверены и в симуляции: весь путь `kg_mcu2` → `PS2_WR` / `LD_WR` (поведение по описанию `kg_l2_load` / `kg_l2_hid`), HDMI / OSD (модули как в core-p4096), окно `DE` по реальному кадру (тест — одна часть кадра со сдвинутым окном), полный поток конфигурации через плату (в машине проверен Verilator-ом, `docs/machine.md` 5).
+
+## 9. Go и Mini (Ф3)
+
+Топы `rtl/karabas_go_top.v` и `rtl/karabas_mini_top.v` руками не правятся: их делает `src/tools/mktop.py` из топа Mini G (как в core-p4096; выводы плат — из топов core-p4096, при первом запуске `python3 tools/mktop.py go=…/core-p4096/src/rtl/karabas_go_top.v mini=…`). Замены:
+
+- **Mini** (до ревизии G): звук — сигма-дельта `AUDIO_L` / `AUDIO_R` вместо PCM5102, HDMI-звук 44,1 кГц, `MCU_SCK` / `FT_CLK` не на тактовых выводах, `MCU_IO[3:0]`, `FT_RESET`, `MIDI_CLK` 12 МГц.
+- **Go**: VGA через общий с FT812 видео-ЦАП (`VGA_*`, `V_CLK` = инвертированный пиксельный такт из `rtl/board/bus_ce.v`, `FT_OE_N`), HDMI, `FT_CLK_OUT` и АЦП нет; полярность синхроимпульсов — пункт OSD **VGA Sync** (индекс 2, только Go, по умолчанию −H −V); прерывание link v2 на `MCU_SPI_IO[0]`, выбор FT812 — `MCU_SPI_FT_CS_N`; разъём дисковода — все выходы 0 (физического FDD пока нет), `BEEPER` = 0, `DAC_LRCK` / `DAC_MUTE`.
+
+`.ucf` — выводы из core-p4096, ограничения тайминга наши (T80 многотактовый, SRAM 8 / 4 нс, SDRAM 6 / 4 нс); MCU на Go / Mini — 16 МГц без пакетов.
+
+Сборка (коммит 0ec9c69, `make go`, `make mini`, `map -t 2`): **Go** — 55 % LUT, 79 % слайсов, 4 834 регистра; **Mini** — 64 % LUT, 88 % слайсов; тайминг выполнен на обеих. На Go регистров меньше на ~1 600 — нет HDMI (`kg_hdmi_ft`, FIFO FT); удалённая логика (`Removed Logic`) на Go и Mini одинаковая. **На платах Go и Mini не проверялись** (на стенде только Mini G).

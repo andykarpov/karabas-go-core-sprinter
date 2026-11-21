@@ -1,5 +1,4 @@
 src/roms/kg/
-*.kg
 src/sim/build/
 src/sim/build/
 # intermediate build files

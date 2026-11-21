@@ -97,7 +97,12 @@ module sp_dcp (
 	input             CFG_RST,
 	// karabas: personality k30 (BIOS 3.05 / 3.06, docs/versions.md): PN[7..6].clrn = /RESET & CNF7 (DCP.TDF:670 of
 	// k30), i.e. PN5 is cleared by CNF5 only and is no longer kept by Pentagon-512. 0 = 3.03a. Changes only in CFG_RST.
-	input             PERS_K30
+	input             PERS_K30,
+	// karabas: personality SCROLL (Game Config, docs/versions.md): the DCP logic is that of 3.03a (2.18 sources, the
+	// same function); only DCP.MIF differs: word EE = 2041 (3.03a 2000, the Reset return page 41). After the reload
+	// MEM[EE] is rewritten while CFG_RST stays high, from the value of this input then (it may be set after the
+	// reload has run, before CFG_RST falls). Changes only in CFG_RST.
+	input             PERS_SCROLL
 );
 	parameter MIF_HEX = "dcp.hex";
 	// karabas: REFRESH_REG = 1 when REFRESH is a CLK42 register switching at the same edge as RFC (in the top it is
@@ -128,6 +133,7 @@ module sp_dcp (
 	reg  [7:0] rl_wa = 8'd0;
 	reg [15:0] rl_d = 16'd0;
 	reg        rl_we = 1'b0;
+	reg        rl_ee = 1'b0;                   // SCROLL: MEM[EE] by the personality, after the reload (CFG_RST)
 	reg [15:0] arr_q = 16'd0;                  // the array word at the address latched at the last CE
 	reg [15:0] q = 16'd0;                      // MEM.q: output register
 
@@ -291,15 +297,21 @@ module sp_dcp (
 	endcase
 
 	wire tick = CE | CE_N;
-	wire        mem_we = rl_we | (CE & memwr);
-	wire  [7:0] mem_wa = rl_we ? rl_wa : pgs_q;
-	wire [15:0] mem_wd = rl_we ? rl_d : {q[15:8], DI};
+	// SCROLL: after the 256 words the ROM is read at EE and that word written, 2041 with PERS_SCROLL
+	// (the reload word is muxed first: the CPU data DI keeps a 2:1 mux into the RAM)
+	wire [15:0] ee_wd  = PERS_SCROLL ? 16'h2041 : rl_d;
+	wire        rl_w   = rl_we | rl_ee;
+	wire [15:0] rl_wd  = rl_ee ? ee_wd : rl_d;
+	wire        mem_we = rl_w | (CE & memwr);
+	wire  [7:0] mem_wa = rl_w ? (rl_ee ? 8'hEE : rl_wa) : pgs_q;
+	wire [15:0] mem_wd = rl_w ? rl_wd : {q[15:8], DI};
 	always @(posedge CLK) begin
 		rl_we <= 1'b0;
-		if (CFG_RST) begin rl_we <= ~rl_a[8]; if (~rl_a[8]) rl_a <= rl_a + 9'd1; end
+		rl_ee <= 1'b0;
+		if (CFG_RST) begin rl_we <= ~rl_a[8]; rl_ee <= rl_a[8] & ~rl_we; if (~rl_a[8]) rl_a <= rl_a + 9'd1; end
 		else rl_a <= 9'd0;
 		rl_wa <= rl_a[7:0];
-		rl_d  <= ini[rl_a[7:0]];
+		rl_d  <= ini[rl_a[8] ? 8'hEE : rl_a[7:0]];
 		if (mem_we) mem[mem_wa] <= mem_wd;
 	end
 

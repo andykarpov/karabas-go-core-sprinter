@@ -1,6 +1,6 @@
 # Sprinter Sp2000 core for Karabas Go / Mini / Mini G, ISE 14.7 (docs/minig.md).
 #
-#   make                  = make minig (Ф1: Mini G only; the Go / Mini tops come in Ф3)
+#   make                  = make minig; make go / make mini: the other boards (their tops come from tools/mktop.py)
 #   make minig            synthesis, implementation, bitstream, sprinter.kg (BIOS 3.06, the only one supported)
 #   make minig-xst        one step: <board>-xst (.ngc), <board>-impl (.bin), <board>-core (.kg)
 #   make minig-report     LUTs, slices, block RAMs and the timing result of the last build
@@ -16,8 +16,7 @@
 # Inputs per board: karabas_<board>.prj (the source list, the shared modules as "../modules/rtl/..."), .xst,
 # .ucf, .ut. A step runs again when one of its inputs is newer than its output.
 #
-# The BIOS ROM is not in git (docs/roms.md): the .kg takes roms/kg/sp2k-3.06.rom, copied from $(ROM) at pack time
-# (default: the local image of the MAME set, docs/roms.md 1.1).
+# The BIOS ROM of the .kg is src/roms/sp2k-3.06-hf2.rom (in git, docs/roms.md).
 
 ISE_SETTINGS ?= /opt/Xilinx/14.7/ISE_DS/settings64.sh
 SHELL = /bin/bash
@@ -25,16 +24,18 @@ SHELL = /bin/bash
 XIL = source $(ISE_SETTINGS) > /dev/null;
 
 PART = xc6slx25-ftg256-2
-BOARDS = minig
+BOARDS = go mini minig
 KG_DEFAULT = sprinter.kg
 KG ?= $(KG_DEFAULT)
 CMOS ?=
 ID ?=
 NAME ?=
 JSON = core.json
-ROM ?= $(HOME)/Downloads/karabas-sd-sprinter/roms/mame-named/sp2k-3.06.rom
-ROM_KG = roms/kg/sp2k-3.06.rom
+# the BIOS of the .kg (in git): BIOS 3.06 Hotfix 2 (docs/roms.md); ROM= only for minig-pack
+ROM_KG = roms/sp2k-3.06-hf2.rom
 # map / par as core-p4096; cost table 2 first (karabas-go-notes map-cost-table-2-first); -mt 2: the PC is shared
+MAP_T_go = 2
+MAP_T_mini = 2
 MAP_T_minig = 2
 MAP_OPT = -logic_opt off -ol high -xe n -xt 0 -register_duplication off -r 4 -global_opt off -mt 2 -detail -ir off -pr b -lc off -power off
 PAR_OPT = -ol high -xe n -mt 2
@@ -43,11 +44,6 @@ INCLUDES = $(wildcard ../modules/rtl/mcu/*.vh) $(wildcard rtl/acex/mif/*.hex)
 .PHONY: all clean $(BOARDS) $(BOARDS:=-xst) $(BOARDS:=-impl) $(BOARDS:=-core) $(BOARDS:=-report) $(BOARDS:=-pack)
 
 all: minig
-
-$(ROM_KG):
-	@[ -s "$(ROM)" ] || { echo "no BIOS image $(ROM) (docs/roms.md 1.1; set ROM=...)"; exit 1; }
-	mkdir -p roms/kg
-	cp "$(ROM)" $@
 
 define board
 SRC_$(1) := $$(shell sed -n 's/^[a-z]* work "\(.*\)"/\1/p' karabas_$(1).prj)

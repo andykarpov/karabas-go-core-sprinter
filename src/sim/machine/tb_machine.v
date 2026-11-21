@@ -77,17 +77,18 @@ module tb_machine;
 		for (i = 0; i < 2097152; i = i + 1) sdm[i] = 16'h0000;
 		$readmemh(`ROM_HEX, rom);
 		for (i = 0; i < 262144; i = i + 2) begin slo[19'h40000 + i / 2] = rom[i]; shi[19'h40000 + i / 2] = rom[i + 1]; end
-		// +scroll: the configuration of the game in fastram, as its installer leaves it: the loader signature at FEF0
-		// (the 16 bytes the loader compares, ROM 0x3009E) and SCROLL.ACX at 1000; the loader then takes the stream
-		// from fastram (CSBR = F0)
+		// +scroll: the configuration of the game in fastram, as its installer leaves it (also BIOS 3.05+ #F3 with a
+		// memory block): the loader signature ACEX_30K_LOADING at FEF0 (the 16 bytes the loader compares: ROM 3.04
+		// 0x3009E, 3.06 0x300C8) and SCROLL.ACX at 1000; the loader then takes the stream from fastram (CSBR = F0)
 		if ($test$plusargs("scroll")) begin
 			for (i = 0; i < 59215; i = i + 1) acx[i] = 8'hxx;
 			$readmemh("build/scroll.hex", acx);
 			for (i = 0; i < 59215; i = i + 1) fast_wr(16'h1000 + i, acx[i]);
-			for (i = 0; i < 16; i = i + 1) fast_wr(16'hFEF0 + i, rom[18'h3009E + i]);
+			for (i = 0; i < 16; i = i + 1) fast_wr(16'hFEF0 + i, sig[8 * (15 - i) +: 8]);
 		end
 	end
 	reg [7:0] acx [0:59214];
+	reg [127:0] sig = "ACEX_30K_LOADING";
 	task fast_wr(input [15:0] b, input [7:0] x); begin
 		if (b[0]) shi[19'h60000 + b[15:1]] = x; else slo[19'h60000 + b[15:1]] = x;
 	end endtask
@@ -96,10 +97,13 @@ module tb_machine;
 	wire on = cfg_state == 2'd3;
 	// per boot (release of the ACEX): hash, personality, first configured M1 {RA, A}, first OUTs
 	integer nb = 0;
-	reg [31:0] b_hash [0:3]; reg [1:0] b_pers [0:3]; reg b_unk [0:3]; reg [19:0] b_m1 [0:3]; integer b_nout [0:3];
+	reg [31:0] b_hash [0:3]; reg [1:0] b_pers [0:3]; reg [1:0] b_px [0:3]; reg [15:0] b_ee [0:3]; reg b_unk [0:3]; reg [19:0] b_m1 [0:3]; integer b_nout [0:3];
 	reg [23:0] b_out [0:31];                          // [boot * 8 + n]
 	event rel_ev;
 	// the MAX must leave the load mode at the release (the XACS pulse)
+	// DCP MEM[EE] after the release (written until CFG_RST falls): 2041 with SCROLL, else 2000
+	always @(rel_ev) begin repeat (4) @(posedge clk); b_ee[nb - 1] = m.ACEX.DECODE.mem[8'hEE];
+		$display("  DCP MEM[EE] = %h", b_ee[nb - 1]); end
 	always @(rel_ev) begin
 		#(20000.0);
 		if (m.max_clkzz_oe !== 1'b0) begin $display("  ERROR: the MAX is still in the load mode 20 us after the release"); errors = errors + 1; end
@@ -152,8 +156,9 @@ module tb_machine;
 			b_hash[nb] = cfg_hash; b_pers[nb] = cfg_pers; b_unk[nb] = cfg_unknown; b_m1[nb] = 20'hFFFFF; b_nout[nb] = 0;
 			nb = nb + 1;
 			->rel_ev;
-			$display("%0.1f us: ACEX released: %0d clocks, %0d bytes, hash %h, personality %0d (sp_acex PERS_K30 %b), unknown %b, FNV-1a %h, CSBR %h MCR %h",
-				$realtime / 1000.0, m.bits, cfg_bytes, cfg_hash, cfg_pers, m.ACEX.PERS_K30, cfg_unknown, m.CFG_FNV, m.csbr, m.mcr);
+			b_px[nb - 1] = {m.ACEX.PERS_SCROLL, m.ACEX.PERS_K30};
+			$display("%0.1f us: ACEX released: %0d clocks, %0d bytes, hash %h, personality %0d (sp_acex PERS_K30 %b PERS_SCROLL %b), unknown %b, FNV-1a %h, CSBR %h MCR %h",
+				$realtime / 1000.0, m.bits, cfg_bytes, cfg_hash, cfg_pers, m.ACEX.PERS_K30, m.ACEX.PERS_SCROLL, cfg_unknown, m.CFG_FNV, m.csbr, m.mcr);
 		end
 	end
 	// CPU writes in the configured map (BIOS activity): count, first few
@@ -197,12 +202,16 @@ module tb_machine;
 				b_out[k * 8 + 2], b_out[k * 8 + 3], b_out[k * 8 + 4], b_out[k * 8 + 5], b_out[k * 8 + 6], b_out[k * 8 + 7]);
 			if (b_m1[k] !== 20'h80000) begin $display("  ERROR: boot %0d does not start at 0000 of ROM page 8", k); errors = errors + 1; end
 			if (`CFG_BITS_T >= 4096) begin
-				if ($test$plusargs("scroll") ? (b_hash[k] !== 32'h3861cfa4 || b_pers[k] !== 2'd2) :
+				// +scroll +reset: the loader erased the fastram signature, the second boot is the standard one from ROM
+				if (($test$plusargs("scroll") && k == 0) ? (b_hash[k] !== 32'h3861cfa4 || b_pers[k] !== 2'd2) :
 				    (b_hash[k] !== exp_hash || b_pers[k] !== exp_pers[1:0] || b_unk[k] !== 1'b0)) begin
 					$display("  ERROR: boot %0d: wrong hash / personality", k); errors = errors + 1;
 				end
+				if (b_px[k] !== {b_pers[k] == 2'd2, b_pers[k] == 2'd1} || b_ee[k] !== ((b_pers[k] == 2'd2) ? 16'h2041 : 16'h2000)) begin
+					$display("  ERROR: boot %0d: sp_acex PERS_SCROLL / PERS_K30 %b, DCP MEM[EE] %h", k, b_px[k], b_ee[k]); errors = errors + 1;
+				end
 			end
-			if (k > 0) begin
+			if (k > 0 && !$test$plusargs("scroll")) begin
 				if (b_hash[k] !== b_hash[0] || b_nout[k] !== b_nout[0]) begin $display("  ERROR: boot %0d differs from boot 0", k); errors = errors + 1; end
 				for (j = 0; j < 8; j = j + 1) if (j < b_nout[0] && b_out[k * 8 + j] !== b_out[j]) begin
 					$display("  ERROR: boot %0d OUT %0d differs", k, j); errors = errors + 1; end

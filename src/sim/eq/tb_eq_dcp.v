@@ -6,6 +6,7 @@
 // HDD ports (descriptors 20..29), AY / system ports, wait states, DOS on / off, CONTINUE stretches, resets.
 // CLK = 84 MHz, clk42 toggles at every CLK edge and is the reference's CLK42; CE = ~clk42 (the reference's CLK42
 // rises at our CE edge), CE_N = clk42. All inputs change 1 ns after a CE edge (MD after a CE_N edge).
+// -DK30 / -DSCROLL: the personality against the k30 / SCROLL DCP netlist (SCROLL: the MEM[EE] reload by CFG_RST, below).
 `timescale 1ns/1ps
 `include "eq_cmp.vh"
 module tb_eq_dcp;
@@ -62,7 +63,11 @@ module tb_eq_dcp;
 	wire scr128_o, hdd_data_o, hdd_flip_o, ram_o, blk_r_o, pn4_o;
 	wire [7:0] do_o, dcpp_o; wire [11:0] ma_o, page_o; wire [1:0] mca_o; wire [3:0] ra_o, type_o; wire [9:0] ga_o;
 
-	dcp ref(.CLK42(clk42), .\/RESET (reset_n), .\/RES (res_r), .CT(ct[2:0]), .\CONTINUE (cont), .RAS(ras_r), .CAS(cas_r),
+	// -DSCROLL: ours starts with the 3.03a MIF and a CFG_RST of 300 CLK (the reload, then MEM[EE] = 2041 by
+	// PERS_SCROLL); the reference's clock is held meanwhile, so both leave power-up together
+	reg cfg_rst = `PERS_SCROLL_V;
+	wire clk42_r = clk42 & ~cfg_rst;
+	dcp ref(.CLK42(clk42_r), .\/RESET (reset_n), .\/RES (res_r), .CT(ct[2:0]), .\CONTINUE (cont), .RAS(ras_r), .CAS(cas_r),
 		.MC_END(mce_r), .MC_BEGIN(mcb_r), .MC_TYPE(mct_r), .MC_WRITE(mcw_r), .A(a), .DI(di), .\DO (do_r), .MA(ma_r),
 		.MCA(mca_r), .TURBO_HAND(th), .CLK_Z80(clkz_r), .TURBO(turbo_r), .\/IO (io_n), .\/RD (rd_n), .\/WR (wr_n),
 		.\/MR (mr_n), .\/RF (rf_n), .\/M1 (m1_n), .\/WAIT (wait_r), .\/IOM (iom_r), .\/IOMM (iomm_r), .MD(md),
@@ -81,11 +86,18 @@ module tb_eq_dcp;
 		.WR_TM9(wr_tm9_o), .WR_AWG(wr_awg_o), .RD_KP11(rd_kp11_o), .KP11_MIX(kp11_o), .REFRESH_EV(refresh_ev),
 		.G_LINE(gl), .GA(ga_o), .GRAF(graf_o), .SP_SCR(sp_scr_o), .SP_SA(sp_sa_o), .SCR128(scr128_o),
 		.TEST_R(test_r), .HDD_DATA(hdd_data_o), .HDD_FLIP(hdd_flip_o), .RAM(ram_o), .BLK_R(blk_r_o), .PN4Q(pn4_o),
-		.ACC_ON(acc_on), .DCPP(dcpp_o), .DCAS_FALL_EV(dcas_fall_ev), .BLK_MEM(blk_mem), .PERS_K30(`PERS_K30_V));
+		.ACC_ON(acc_on), .DCPP(dcpp_o), .DCAS_FALL_EV(dcas_fall_ev), .BLK_MEM(blk_mem), .CFG_RST(cfg_rst), .PERS_K30(`PERS_K30_V),
+		.PERS_SCROLL(`PERS_SCROLL_V));
 
-	// -DK30 +mut: the k30 PN5 clear forced back to 3.03a (must fail)
+	// +mut (must fail): -DK30 the k30 PN5 clear forced back to 3.03a; -DSCROLL MEM[EE] left at the 3.03a word
 	wire m_pn_clr5 = dut.pn_clr_lo & dut.pn_clr_hi;   // a plain net: iverilog evaluates another force RHS once
+	wire [15:0] m_ee = dut.rl_d;
+`ifdef SCROLL
+	initial if ($test$plusargs("mut")) #1 force dut.ee_wd = m_ee;
+	initial begin repeat (300) @(posedge clk); @(negedge clk); while (clk42) @(negedge clk); cfg_rst = 0; end
+`else
 	initial if ($test$plusargs("mut")) #1 force dut.pn_clr5 = m_pn_clr5;
+`endif
 	`EQ_CMP(res, 1, res_o, res_r)
 	`EQ_CMP(ras_cas, 2, ({ras_o, cas_o}), ({ras_r, cas_r}))
 	`EQ_CMP(mc, 4, ({mcb_o, mce_o, mct_o, mcw_o}), ({mcb_r, mce_r, mct_r, mcw_r}))
@@ -255,7 +267,7 @@ module tb_eq_dcp;
 	// a directed port with a chosen descriptor
 	localparam [15:0] P_CNF = 16'h00C6, P_CNF_S = 16'h0086, P_PN = 16'h7FFD, P_SC = 16'h1FFD, P_W1 = 16'h4089,
 		P_W2 = 16'h40A9, P_W0 = 16'h40C9, P_W3 = 16'h80F5, P_HDD = 16'h0050, P_HDR = 16'h4051, P_AY = 16'hFFFD,
-		P_KBD = 16'h00FE, P_WG = 16'h001F, P_NOW = 16'h00FF;
+		P_KBD = 16'h00FE, P_WG = 16'h001F, P_NOW = 16'h00FF, P_EE = 16'h2003;
 	reg use_sys = 0;                           // CNF writes through the port with A6 = 0: SYS = 1 (BIOS / DOS ROM map)
 	task cnf(input [7:0] v); iow(use_sys ? P_CNF_S : P_CNF, v); endtask
 
@@ -278,6 +290,7 @@ module tb_eq_dcp;
 		dset(P_HDD, 0, 8'h20); dset(P_HDD, 1, 8'h20); dset(P_HDR, 0, 8'h23); dset(P_HDR, 1, 8'h27);
 		dset(P_AY, 0, 8'h90); dset(P_AY, 1, 8'h90); dset(P_KBD, 1, 8'h80); dset(P_WG, 1, 8'h10); dset(P_WG, 0, 8'h14);
 		dset(P_NOW, 1, 8'h2A); dset(P_W1, 1, 8'hE9); dset(P_PN, 1, 8'hC1);
+		dset(P_EE, 0, 8'hEE); dset(P_EE, 1, 8'hEE);   // descriptor EE: MEM[EE] (2000 in 3.03a, 2041 in SCROLL)
 
 		repeat (400) @(posedge clk);
 		reset_nx = 1; dos_nx = 1;
@@ -313,6 +326,7 @@ module tb_eq_dcp;
 		iow(P_W2, 8'h57); mrd(16'h8000); mwr(16'hA000, 8'h02); m1cyc(16'h8000);
 		iow(P_W3, 8'h5C); mrd(16'hC000); mwr(16'hC000, 8'h03); iow(P_PN, 8'h05); mrd(16'hC000);
 		iow(P_W0, 8'h33); m1cyc(16'h0000); mrd(16'h1000);
+		ior(P_EE); iow(P_EE, 8'h2E); ior(P_EE); m1cyc(16'h0000); mrd(16'hC000);   // descriptor EE (MEM[EE])
 		// HDD data register twice, a flip clear by DOUBLE_CAS
 		ior(P_HDD); ior(P_HDD); iow(P_HDD, 8'h11); ior(P_HDD); ior(P_HDR); iow(P_HDR, 8'h22);
 		for (j = 0; j < 3; j = j + 1) begin
@@ -346,7 +360,7 @@ module tb_eq_dcp;
 		th_nx = 1; cnf(8'h03);
 		for (i = 0; i < 200; i = i + 1) rand_op;
 		idle(10);
-		$display("tb_eq_dcp (%0s DCP vs sp_dcp%0s), %0t ns:", `PERS_NAME, $test$plusargs("mut") ? ", mutation PN5" : "", $time);
+		$display("tb_eq_dcp (%0s DCP vs sp_dcp%0s), %0t ns:", `PERS_NAME, $test$plusargs("mut") ? ", mutation" : "", $time);
 		res_report; ras_cas_report; mc_report; ma_report; mca_report; clk_z80_report; turbo_report; wait_n_report;
 		iom_report; dout_report; page_report; type_report; dcpp_report; ra_report; cs_report; port_report;
 		pn_bits_report; wr_dwg_report; wr_tm9_report; wr_awg_report; rd_kp11_report; kp11_mix_report; ga_report;
