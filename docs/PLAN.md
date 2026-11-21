@@ -125,7 +125,7 @@ FDD (ВГ93 + сепаратор, образы), CMOS, CBL, мышь, режим
 Решения пользователя 2026-11-22: CD-ROM (ATAPI) не делаем ни в каком виде, второй канал IDE в этом ядре не подключаем. Базовый набор платы обязателен для всех ядер.
 
 - 4.1 ✓ Пики звука на MCU (`audio_peaks` из modules, общий микс L / R): `audio_peaks` на `clk_bus` (такт `kg_mcu2`) по итоговому миксу `audio_l` / `audio_r` → `MATRIX_CMD` / `MATRIX_CMD_WR` (`ENABLE_AUX` уже был), как в core-nanomig; все три платы.
-- 4.2 Лента: проверить `TAPE_IN` / `TAPE_OUT` (порт `FE` через ACEX), монитор ленты `kg_tape_monitor` в микс, пункт OSD «Tape monitor» Off / In / Out / Both (Menu+T), как в tsconf.
+- 4.2 ✓ Лента: проверить `TAPE_IN` / `TAPE_OUT` (порт `FE` через ACEX), монитор ленты `kg_tape_monitor` в микс, пункт OSD «Tape monitor» Off / In / Out / Both (Menu+T), как в tsconf. Путь проверен в `sim/io/run_io.sh` (машина + io.asm в ROM, ~1 мин со сборкой Verilator): `IN (#FE)` бит 6 = `TAPE_IN` (0 и 1), `OUT (#FE)` бит 3 → `TAPE_OUT` (1 и 0). `kg_tape_monitor` (modules, как в tsconf) на `clk_bus`, его отсчёт складывается с L / R с насыщением; OSD — индекс 3 (`SW_N` = 4 на всех платах, VGA Sync Go остаётся 2). Подмодуль `modules` не обновляли: `kg_tape_monitor` / `audio_peaks` в нём уже есть.
 - 4.3 MIDI: бит 2 регистра 14 AY (порт A, как у ZX 128 и tsconf) → `MIDI_TX`; запись регистра перехватывается вне ACEX (AY в ACEX — микропрограмма).
 - 4.4 АЦП PCM1808 (Go, Mini G): приёмник I2S, `ADC_CLK`, линейный вход в микс.
 - 4.5 Физический дисковод на Go: модель по выводам + сепаратор (по образцу `*_fdd_phys` других ядер), выбор образ / дисковод в OSD; на плате не проверить — Go на стенде нет.

@@ -17,7 +17,8 @@
 -- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx -> PCM5102 + HDMI audio.
 -- Storage (docs/storage.md): IDE primary master / slave = HDD images (slots 4 / 5), WD1793 drives A / B = floppy
 --   images (slots 0 / 1, TRD / 720 KB / 1.44 MB) on the file mounter of the MCU (sp_storage: hdf_ata, sp_fdd).
--- Not yet (bus idle): the DS12887 RTC (the CMOS hook of sp_storage), tape, ISA.
+-- Tape: TAPE_IN -> XA mux -> port FE bit 6, port FE bit 3 -> XA2 latch -> TAPE_OUT; kg_tape_monitor in the mix.
+-- Not yet (bus idle): ISA.
 ------------------------------------------------------------------------------------------------------------------*/
 // karabas: made by src/tools/mktop.py from karabas_minig_top.v (do not edit it, change Mini G)
 // The Go: VGA (the video DAC, V_CLK) instead of HDMI, no FT_CLK_OUT, no ADC, the floppy connector unused.
@@ -228,7 +229,7 @@ wire [2:0] sdc_slot;
 wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, sdc_byte_out_data;
 
-localparam SW_N = 3;
+localparam SW_N = 4;
 wire [SW_N*8-1:0] softsw;
 
 // the configuration hash for the mcu log: changes only at a configuration load (clk_sys register, clk_bus = clk_sys / 3
@@ -382,6 +383,7 @@ assign FT_OE_N = !mcu_ft_vga_on;
 // ---------- OSD switches (core.json "osd" "index"): switch n = softsw[n*8 +: 8] ----------
 wire [1:0] vga_sync_pos = softsw[2*8 +: 2];  // 2 VGA Sync (Go only): bit 0 +H, bit 1 +V (0 = -H -V)
 wire sw_reset = softsw[0];               // 0 Reset (Menu+F12): the RESET button of the board = reconfiguration
+wire [1:0] tape_mon = softsw[3*8 +: 2];  // 3 Tape monitor (Menu+T): 0 off, 1 in, 2 out, 3 both (kg_tape_monitor)
 
 // ---------- the ROM loader (kind 0: the BIOS image of core.json "roms") ----------
 wire ld_rom_act = ld_active && ld_kind == 2'd0;
@@ -480,10 +482,25 @@ endgenerate
 // ---------- sound: the I2S of the ACEX -> samples ----------
 wire [15:0] snd_l, snd_r;
 sp_i2s_rx i2s_rx(.CLK(clk_sys), .BCK(dac_bck), .WS(dac_ws), .DATA(dac_data), .LEFT(snd_l), .RIGHT(snd_r));
+
+// the tape monitor (modules kg_tape_monitor, as core-tsconf): TAPE_IN (the pin) and TAPE_OUT (the XA2 latch of
+// sp_machine, a clk_sys register: clk_bus = clk_sys / 3 with aligned edges) heard in the mix; a level held 37 ms
+// relaxes to 0 (an open input, MIC left at 1)
+wire signed [15:0] tape_mon_sample;
+kg_tape_monitor #(.CLK_HZ(28000000), .HOLD_US(37000), .LEVEL_IN(4096), .LEVEL_OUT(2048)) tape_monitor(
+	.clk(clk_bus), .mode(tape_mon), .tape_in(TAPE_IN), .tape_out(TAPE_OUT), .in_on(), .out_on(),
+	.sample(tape_mon_sample));
+
+// the final mix (clk_bus): the sound of the ACEX + the tape monitor, saturated to 16 bits
+function [15:0] sat16(input [17:0] v);   // a sum of up to four 16-bit two's complement values
+	sat16 = (v[17:15] == 3'b000 || v[17:15] == 3'b111) ? v[15:0] : v[17] ? 16'h8000 : 16'h7FFF;
+endfunction
+wire [17:0] mix_l = {{2{snd_l[15]}}, snd_l} + {{2{tape_mon_sample[15]}}, tape_mon_sample};
+wire [17:0] mix_r = {{2{snd_r[15]}}, snd_r} + {{2{tape_mon_sample[15]}}, tape_mon_sample};
 reg [15:0] audio_l = 16'd0, audio_r = 16'd0;
 always @(posedge clk_bus) begin
-	audio_l <= snd_l;
-	audio_r <= snd_r;
+	audio_l <= sat16(mix_l);
+	audio_r <= sat16(mix_r);
 end
 
 // the level meters of the mcu: the peaks of the final mix as CMD_AUDIO_PEAKS_L / _R (modules audio_peaks.v, as

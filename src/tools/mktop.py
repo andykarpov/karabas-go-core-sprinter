@@ -93,7 +93,6 @@ def go(b):
     b = cut(b, "// MCU_SCK on a global buffer", "BUFG bufg_mcu_sck(.I(mcu_sck_ibufg), .O(mcu_sck));\n",
             "// MCU_SCK is not on a clock pin of the Go (CLOCK_DEDICATED_ROUTE = FALSE in the ucf)\n"
             "wire mcu_sck = MCU_SCK, mcu_sck_ibufg = MCU_SCK;\n", "mcu sck")
-    b = sub(b, "localparam SW_N = 2;", "localparam SW_N = 3;", "sw_n")
     b = sub(b, "	.MCU_SPI_FT_SS	(MCU_IO[3]),", "	.MCU_SPI_FT_SS	(MCU_SPI_FT_CS_N),", "ft ss")
     b = sub(b, "assign FT_SPI_MOSI = mcu_ft_spi_on ? mcu_ft_mosi : 1'b1;\n",
             "assign FT_SPI_MOSI = mcu_ft_spi_on ? mcu_ft_mosi : 1'b1;\n"

@@ -68,6 +68,31 @@
         },
         {
             "type": "S",
+            "name": "Tape monitor",
+            "index": 3,
+            "options": [
+                {
+                    "name": "Off",
+                    "key": "off"
+                },
+                {
+                    "name": "In",
+                    "key": "in"
+                },
+                {
+                    "name": "Out",
+                    "key": "out"
+                },
+                {
+                    "name": "Both",
+                    "key": "both"
+                }
+            ],
+            "default": 0,
+            "hotkey": "Menu+T"
+        },
+        {
+            "type": "S",
             "name": "VGA Sync",
             "key": "vga_sync",
             "index": 2,
