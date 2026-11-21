@@ -5,7 +5,7 @@
 // log port 80, external ports read as port xor A5, data bus 00 in INTA; INT on request until INTA; SIO byte feeds;
 // CTC TRG0 = 875 kHz (CLK / 96, as the MAX CT3); PIO inputs A = 3C, B = 15; SIO A CTS / DCD = 0, B CTS = 1.
 // Checks: the log of the program (OUT 80 / 84, CS0 / CS1 at reads of xEEE) against the list below, the ZC/TO0
-// periods, PIO outputs, and the bus shape (z80_bus_chk.vh: every cycle as the bus model of tb_eq_acex).
+// periods, the CTC3 interrupt period (CTC2 -> CTC3 cascade, IM 2 vector 06, RETI), PIO outputs, and the bus shape (z80_bus_chk.vh: every cycle as the bus model of tb_eq_acex).
 `timescale 1ns/1ps
 module tb_z84c15;
 	reg clk = 0; always #5.952 clk = ~clk;
@@ -90,7 +90,7 @@ module tb_z84c15;
 				5: turbo <= 0;
 				6: turbo <= 1;
 				7: fork feed_a(8'h99, 2); join_none
-				8, 9, 10: zc_mode <= d_o - 8;
+				8, 9, 10, 11: zc_mode <= d_o - 8;
 			endcase
 		endcase
 	end
@@ -134,6 +134,21 @@ module tb_z84c15;
 		end else if (zc_t >= 0) zc_t = zc_t + 1;
 	end
 
+	// CTC interrupt period (zc_mode 3): INTA cycles 2 x 5 x 96 CLK apart (one HALT NOP of jitter: 16 CLK); none with 0
+	integer ia_t = -1, ia_n = 0, ia_all = 0; reg ia_q = 0;
+	always @(posedge clk) begin
+		ia_q <= ~m1_n & ~io_n;
+		if (zc_mode != 3) ia_t = -1;
+		else if (~m1_n & ~io_n & ~ia_q) begin
+			if (ia_t >= 0) begin
+				if (ia_t < 960 - 20 || ia_t > 960 + 20) begin $display("  CTC interrupt period %0d CLK, not 960", ia_t); errors = errors + 1; end
+				ia_n = ia_n + 1;
+			end
+			ia_t = 0;
+		end else if (ia_t >= 0) ia_t = ia_t + 1;
+		if (~m1_n & ~io_n & ~ia_q) ia_all = ia_all + 1;
+	end
+
 	// ---- expected log
 	reg [15:0] ex [0:255]; integer nex = 0;
 	task e(input [15:0] v); begin ex[nex] = v; nex = nex + 1; end endtask
@@ -157,9 +172,10 @@ module tb_z84c15;
 		eb(8'h64); eb(8'h65); eb(8'h8F); eb(8'h8F); eb(8'h5A);
 		// 4 PIO, 5 WDT
 		eb(8'h3A); eb(8'h5A); eb(8'hFF); eb(8'hD5); eb(8'hFF); eb(8'hFF);
-		// 6 CTC (range checked), 7 interrupts, 8 3.5 MHz / memory
+		// 6 CTC (range checked), 7 interrupts, 9 CTC interrupts (vector 06, 3 of them, then INT -> FF), 8 3.5 MHz / memory
 		e(16'h84xx);
 		eb(8'h38); eb(8'h01); eb(8'h22); eb(8'h02);
+		eb(8'h33); eb(8'h33); eb(8'h33); eb(8'h22); eb(8'h03);
 		eb(8'hF0); eb(8'd120); eb(8'h3C); eb(8'h44);
 
 		repeat (380) @(posedge clk); chk_on = 1;               // the pins are idle in reset
@@ -174,12 +190,14 @@ module tb_z84c15;
 				$display("  log %0d: %h, expected %h", i, (i < nlg) ? lg[i] : 16'hxxxx, (i < nex) ? ex[i] : 16'hxxxx);
 				errors = errors + 1;
 			end
+		if (ia_n < 2) begin $display("  CTC interrupt periods checked: %0d (want >= 2)", ia_n); errors = errors + 1; end
+		if (ia_all != 6) begin $display("  %0d INTA cycles, not 6 (2 + 3 CTC + 1: none after CTC3 is off)", ia_all); errors = errors + 1; end
 		if (zc_n1 < 2 || zc_n2 < 2) begin $display("  CTC0 periods checked: counter %0d, timer %0d (want >= 2 each)", zc_n1, zc_n2); errors = errors + 1; end
 		if (pa_o !== 8'h5A || pa_oe !== 8'hFF || pb_o !== 8'hC0 || pb_oe !== 8'hC0) begin
 			$display("  PIO outputs A %h / %h, B %h / %h", pa_o, pa_oe, pb_o, pb_oe); errors = errors + 1; end
 		if (csbr !== 8'hFF || mcr !== 8'h01 || wr5a !== 8'h62 || wr5b !== 8'hE0) begin
 			$display("  CSBR %h MCR %h WR5A %h WR5B %h", csbr, mcr, wr5a, wr5b); errors = errors + 1; end
-		$display("  CTC0 ZC/TO pulses %0d, periods checked counter %0d / timer %0d, INTA %0d", zc_cnt, zc_n1, zc_n2, n_inta);
+		$display("  CTC0 ZC/TO pulses %0d, periods checked counter %0d / timer %0d, INTA %0d, CTC interrupt periods %0d", zc_cnt, zc_n1, zc_n2, n_inta, ia_n);
 		bc_report;
 		errors = errors + bc_err;
 		$display("tb_z84c15: %0d errors", errors);

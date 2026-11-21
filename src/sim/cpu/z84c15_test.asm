@@ -2,7 +2,7 @@
 ; and sends what it read to the testbench log port #80; the testbench compares the log with its list.
 ; Testbench ports (external): OUT #80 = log, OUT #81 = end, OUT #82 = command (1 feed SIO A 11 22 33 44, 2 the
 ; same without waiting for RDY 55 66 77 88, 3 feed SIO B 0F 8F, 4 INT until INTA, 5 / 6 Z80 clock 3.5 / 21 MHz,
-; 7 feed SIO A 99, 8 / 9 / 10 ZC/TO0 period checks: counter / timer / off), OUT #84 = log with a range check
+; 7 feed SIO A 99, 8 / 9 / 10 ZC/TO0 period checks: counter / timer / off, 11 CTC interrupt period check), OUT #84 = log with a range check
 ; (1..45). IN from an external port gives port xor #A5; the INTA data on the bus is 00.
 	org	0
 	di
@@ -244,6 +244,58 @@ ctc2:	call	delay
 	di
 	im	1
 
+	; ---- 9. CTC interrupts as uwol / TMNT set them (docs/z84c15.md 1.1): CTC2 counter on CLK/TRG2 (875 kHz)
+	; -> ZC/TO2 -> CLK/TRG3, CTC3 counter with interrupt, vector base 00 to channel 0 (channel 3 -> vector 06),
+	; IM 2. Constants 2 x 5 instead of 70 x A0 (period 10 x 96 CLK, the testbench checks it). The handler returns
+	; through CALL to EI / RETI as TMNT: a second and a third interrupt need RETI to clear the in-service bit.
+	ld	hl,im2bad
+	ld	(#9100),hl
+	ld	(#9102),hl
+	ld	(#9104),hl
+	ld	hl,ctcint
+	ld	(#9106),hl
+	ld	hl,im2ok
+	ld	(#91ff),hl
+	xor	a
+	ld	(#9200),a
+	ld	a,#91
+	ld	i,a
+	im	2
+	ld	a,#57
+	out	(#12),a
+	ld	a,2
+	out	(#12),a
+	ld	a,#d7
+	out	(#13),a
+	ld	a,5
+	out	(#13),a
+	xor	a
+	out	(#10),a			; vector 00
+	ld	a,11
+	out	(#82),a
+	ei
+	halt				; -> ctcint (33)
+	halt
+	halt
+	di
+	ld	a,#03
+	out	(#13),a			; channel 3: interrupt off, reset
+	ld	a,8
+	out	(#82),a
+	ei
+	ld	b,8
+ctc3:	call	delay			; no more CTC interrupts
+	djnz	ctc3
+	ld	a,4
+	out	(#82),a
+	halt				; external INT: vector FF -> im2ok (22)
+	di
+	ld	a,(#9200)
+	out	(#80),a			; 3 CTC interrupts
+	ld	a,#03
+	out	(#12),a
+	im	1
+
 	; ---- 8. 3.5 MHz, memory with waits
 	ld	a,5
 	out	(#82),a
@@ -282,6 +334,19 @@ im2bad:	push	af
 	out	(#80),a
 	pop	af
 	ei
+	reti
+
+ctcint:	push	af
+	ld	a,(#9200)
+	inc	a
+	ld	(#9200),a
+	ld	a,#33
+	out	(#80),a
+	pop	af
+	call	eireti
+	ei
+	ret
+eireti:	ei
 	reti
 
 delay:	push	bc
