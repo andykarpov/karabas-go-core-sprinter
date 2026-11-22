@@ -2,8 +2,8 @@
 // a short configuration stream, CFG_BITS_T) with io.asm in ROM page 8, as tb_storage:
 // - tape in: TAPE_IN (the XA multiplexer, SXA = 0) read on port #FE bit 6, 0 and then 1;
 // - tape out: OUT (#FE) bit 3 -> XA2 latched by WR_AWG -> TAPE_OUT, 1 and then 0;
-// - MIDI: MIDI_TX = bit 2 of AY register 14 (#FFFD / #BFFD, codes 90 / 91): idle 1, R14 = FB -> 0, a write of R7
-//   leaves it, R14 = 04 -> 1, a write of R13 with bit 2 = 0 leaves it.
+// - MIDI: MIDI_TX = bit 2 of AY register 14 while R7 bit 6 = 1 (port A an output), else 1 (#FFFD / #BFFD, codes
+//   90 / 91): idle 1, R7 = 40 + R14 = FB -> 0, R7 = 00 -> 1, R7 = 40 -> 0, R14 = 04 -> 1, a write of R13 leaves it.
 // The program logs through OUT (#01) (bytes) and OUT (#02) (markers). Runs in Verilator (--timing) or iverilog.
 `timescale 1ns/1ps
 `ifndef CFG_BITS_T
@@ -105,10 +105,11 @@ module tb_io;
 						check(tape_out === 1'b0, "TAPE_OUT after OUT (#FE),#00");
 						check(midi_tx === 1'b1, "MIDI_TX idle");
 					end
-					8'h30: check(midi_tx === 1'b0, "MIDI_TX after R14 = FB");
-					8'h31: check(midi_tx === 1'b0, "MIDI_TX after a write of R7");
-					8'h32: check(midi_tx === 1'b1, "MIDI_TX after R14 = 04");
-					8'h33: check(midi_tx === 1'b1, "MIDI_TX after a write of R13");
+					8'h30: check(midi_tx === 1'b0, "MIDI_TX after R7 = 40, R14 = FB");
+					8'h31: check(midi_tx === 1'b1, "MIDI_TX after R7 = 00 (port A input)");
+					8'h32: check(midi_tx === 1'b0, "MIDI_TX after R7 = 40");
+					8'h33: check(midi_tx === 1'b1, "MIDI_TX after R14 = 04");
+					8'h34: check(midi_tx === 1'b1, "MIDI_TX after a write of R13");
 					default: ;
 				endcase
 			end

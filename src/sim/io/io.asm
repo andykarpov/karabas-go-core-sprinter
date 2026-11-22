@@ -4,8 +4,8 @@
 ; page 0x40, window 3 while STARTING = 0), then:
 ;   tape in: IN A,(#FE) with TAPE_IN = 0 (marker 20), the testbench sets TAPE_IN = 1, IN A,(#FE) again (marker 21);
 ;   tape out: OUT (#FE) with bit 3 = 1 (marker 22), = 0 (marker 23): the testbench reads TAPE_OUT at the markers;
-;   MIDI: AY register 14 written with bit 2 = 0 (marker 30), register 7 written (marker 31: MIDI_TX stays), register
-;   14 with bit 2 = 1 (marker 32), register 13 selected and written with bit 2 = 0 (marker 33: MIDI_TX stays 1).
+;   MIDI (MIDI_TX = R14 bit 2 while R7 bit 6 = 1, else 1): R7 = 40, R14 = FB (marker 30: 0); R7 = 00 (31: 1, port A
+;   an input); R7 = 40 (32: 0); R14 = 04 (33: 1); R13 selected and written with bit 2 = 0 (34: stays 1).
 ; Results: OUT (#01) = a data byte, OUT (#02) = a marker (the testbench reads the CPU pins; port table code 00).
 
 	macro	LOGA			; log A
@@ -83,14 +83,17 @@ main	di
 	MARK	#23
 
 	; ================= MIDI (AY register 14 bit 2)
+	AYW	7, #40
 	AYW	14, #fb
 	MARK	#30
 	AYW	7, #00
 	MARK	#31
-	AYW	14, #04
+	AYW	7, #40
 	MARK	#32
-	AYW	13, #00
+	AYW	14, #04
 	MARK	#33
+	AYW	13, #00
+	MARK	#34
 
 	MARK	#ff
 	halt

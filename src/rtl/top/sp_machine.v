@@ -227,17 +227,21 @@ module sp_machine #(
 
 	// ================= MIDI: a shadow of AY register 14 on the port strobes of the ACEX (karabas: the board has a MIDI
 	// out, the original not). The register number as sp_ay takes it (D[3:0] at the end of the #FFFD write, the high
-	// bits not checked), the data byte the CPU drives during the #BFFD write, taken at its end; MIDI_TX = bit 2
-	// whatever R7 says (as tsconf turbosound), 1 (idle) after the CPU reset and in SCROLL (no AY there).
+	// bits not checked), the data byte the CPU drives during the #BFFD write, taken at its end; MIDI_TX = bit 2 of
+	// R14 while R7 bit 6 makes port A an output, else 1 (an input pin of the AY is pulled up: the ZX 128); 1 (idle)
+	// after the CPU reset and in SCROLL (no AY there).
 	reg  [3:0] ay_reg = 4'd0;
 	reg  [7:0] ay_dl = 8'hFF;
+	reg        ay_r14_2 = 1'b1, ay_r7_6 = 1'b0;
 	always @(posedge CLK) begin
-		if (~z_res_n | ~on | (CFG_PERS == 2'd2)) begin ay_reg <= 4'd0; MIDI_TX <= 1'b1; end
+		if (~z_res_n | ~on | (CFG_PERS == 2'd2)) begin ay_reg <= 4'd0; ay_r14_2 <= 1'b1; ay_r7_6 <= 1'b0; end
 		else if (ce) begin
 			if (x_ay_a_ev) ay_reg <= d_bus[3:0];
 			if (~x_ay_d_wr_n) ay_dl <= d_bus;
-			if (x_ay_d_ev & (ay_reg == 4'd14)) MIDI_TX <= ay_dl[2];
+			if (x_ay_d_ev & (ay_reg == 4'd14)) ay_r14_2 <= ay_dl[2];
+			if (x_ay_d_ev & (ay_reg == 4'd7)) ay_r7_6 <= ay_dl[6];
 		end
+		MIDI_TX <= ~ay_r7_6 | ay_r14_2;
 	end
 
 	// ================= MAX
