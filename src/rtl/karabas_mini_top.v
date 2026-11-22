@@ -14,10 +14,12 @@
 -- Video: WR_COL + palette shadow -> sp_vout (14 MHz dots, line doubler) -> OSD -> HDMI (kg_hdmi_ft).
 -- Input: PS/2 set 2 bytes of the MCU -> AT frames on the XA lines of the ACEX + SIO A; USB mouse -> MS serial line
 --   + SIO B (sp_kbd_tx, sp_ms_tx).
--- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx -> PCM5102 + HDMI audio.
+-- Sound: the I2S of the ACEX (AY + CBL) -> sp_i2s_rx, + the tape monitor + the ADC (PCM1808: line in, MIDI synth)
+--   -> PCM5102 + HDMI audio; the peaks of the mix to the MCU.
 -- Storage (docs/storage.md): IDE primary master / slave = HDD images (slots 4 / 5), WD1793 drives A / B = floppy
 --   images (slots 0 / 1, TRD / 720 KB / 1.44 MB) on the file mounter of the MCU (sp_storage: hdf_ata, sp_fdd).
--- Not yet (bus idle): the DS12887 RTC (the CMOS hook of sp_storage), tape, ISA.
+-- Tape: TAPE_IN -> XA mux -> port FE bit 6, port FE bit 3 -> XA2 latch -> TAPE_OUT; kg_tape_monitor in the mix.
+-- Not yet (bus idle): ISA.
 ------------------------------------------------------------------------------------------------------------------*/
 // karabas: made by src/tools/mktop.py from karabas_minig_top.v (do not edit it, change Mini G)
 // The Mini: sigma-delta AUDIO_L / AUDIO_R instead of the PCM5102, HDMI audio 44.1 kHz, MCU_SCK / FT_CLK not on
@@ -138,7 +140,6 @@ assign SD_CS_N = 1'b1;
 assign SD_CLK = 1'b0;
 assign SD_DI = 1'bz;
 assign SD_DO = 1'bz;
-assign MIDI_TX = 1'b1;
 // CF card: not used yet (IDE in Ф2), the card deselected
 assign WA = 3'b000;
 assign WCS_N = 2'b11;
@@ -146,10 +147,6 @@ assign WRD_N = 1'b1;
 assign WWR_N = 1'b1;
 assign WRESET_N = 1'b1;
 assign WD = 16'hZZZZ;
-// ADC: not used
-assign ADC_CLK = 1'b0;
-assign ADC_BCK = 1'bz;
-assign ADC_LRCK = 1'bz;
 
 // ---------- clocks: VCO 50 * 37 / 2 = 925 MHz: clk_sys /11 84.09, clk_8 /116 7.97, clk_bus /33 28.03
 wire clk_sys, clk_8mhz, clk_bus, clk_bus_pll, clk_12mhz;
@@ -216,8 +213,13 @@ wire sdc_busy, sdc_done, sdc_error, sdc_byte_in_strobe;
 wire [2:0] sdc_slot;
 wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, sdc_byte_out_data;
+wire img_phys_wr;                         // CMD_IMG_PHYS: a floppy slot on the connector (the Go only)
+wire [15:0] img_phys;
+// the floppy connector (the Go only): no drive here
+wire [3:0] fdd_in = 4'b0000;
+wire [7:0] fdd_out;
 
-localparam SW_N = 2;
+localparam SW_N = 4;
 wire [SW_N*8-1:0] softsw;
 
 // the configuration hash for the mcu log: changes only at a configuration load (clk_sys register, clk_bus = clk_sys / 3
@@ -227,6 +229,8 @@ reg  [31:0] dbg_hash = 32'd0;
 always @(posedge clk_bus) dbg_hash <= cfg_hash;
 wire [7:0] cmos_q, rtc_a, rtc_di, rtc_do;
 wire       rtc_wr_n;
+wire [23:0] matrix_cmd;          // the audio peaks (audio_peaks below)
+wire       matrix_cmd_wr;
 kg_mcu2 #(
 	.CAPS(16'h0000),
 	.SW_N(SW_N),
@@ -320,8 +324,8 @@ kg_mcu2 #(
 	.SDC_BYTE_IN_DATA(sdc_byte_in_data),
 	.SDC_BYTE_OUT_DATA(sdc_byte_out_data),
 	.IMG_WP			(img_wp),
-	.IMG_PHYS_WR	(),
-	.IMG_PHYS		(),
+	.IMG_PHYS_WR	(img_phys_wr),
+	.IMG_PHYS		(img_phys),
 	.IMG_FLUSH		(),
 	.FDD_CHNG_WR	(),
 	.FDD_CHNG		(),
@@ -341,8 +345,8 @@ kg_mcu2 #(
 	.RTC_DI			(rtc_di),
 	.RTC_CS			(1'b1),
 	.RTC_WR_N		(rtc_wr_n),
-	.MATRIX_CMD		(24'd0),
-	.MATRIX_CMD_WR	(1'b0),
+	.MATRIX_CMD		(matrix_cmd),
+	.MATRIX_CMD_WR	(matrix_cmd_wr),
 	.DEBUG_ADDR		(dbg_hash[31:16]),
 	.DEBUG_DATA		(dbg_hash[15:0]),
 	.RTC_DO			(rtc_do),
@@ -367,6 +371,7 @@ assign FT_SPI_MOSI = mcu_ft_spi_on ? mcu_ft_mosi : 1'b1;
 
 // ---------- OSD switches (core.json "osd" "index"): switch n = softsw[n*8 +: 8] ----------
 wire sw_reset = softsw[0];               // 0 Reset (Menu+F12): the RESET button of the board = reconfiguration
+wire [1:0] tape_mon = softsw[3*8 +: 2];  // 3 Tape monitor (Menu+T): 0 off, 1 in, 2 out, 3 both (kg_tape_monitor)
 
 // ---------- the ROM loader (kind 0: the BIOS image of core.json "roms") ----------
 wire ld_rom_act = ld_active && ld_kind == 2'd0;
@@ -426,7 +431,7 @@ sp_machine #(
 	.SD_CLK(SDR_CLK), .SD_CKE(), .SD_CS_N(), .SD_RAS_N(SDR_RAS_N), .SD_CAS_N(SDR_CAS_N), .SD_WE_N(SDR_WE_N),
 	.SD_BA(SDR_BA), .SD_A(SDR_A), .SD_DQM(SDR_DQM), .SD_DQ_O(sdr_do), .SD_DQ_T(sdr_dt), .SD_DQ_I(sdr_di),
 	.KBD_CC(kbd_cc), .KBD_DD(kbd_dd), .MOUSE_D(mouse_d), .TAPE_IN(tape_in_r), .FDD_W(1'b1), .FDD_CH(1'b1),
-	.TAPE_OUT(TAPE_OUT),
+	.TAPE_OUT(TAPE_OUT), .MIDI_TX(MIDI_TX),   // MIDI: AY register 14 bit 2 (sp_machine)
 	.RXA_D(rxa_d), .RXA_STB(rxa_stb), .RXA_RDY(rxa_rdy), .RXB_D(rxb_d), .RXB_STB(rxb_stb), .RXB_RDY(rxb_rdy),
 	.PA_I(8'hFF), .PA_O(), .PB_I(8'hFF), .PB_O(),
 	.PER_D(per_d), .PER_OE(per_oe), .MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a),
@@ -443,7 +448,7 @@ sp_machine #(
 // (on MD while m_cmos_drd is low)
 sp_cmos u_cmos(.CLK(clk_sys), .MD(m_md), .CMOS_AS(m_cmos_as), .CMOS_DWR(m_cmos_dwr), .CMOS_DRD(m_cmos_drd),
 	.Q(cmos_q), .OE(), .CLK_BUS(clk_bus), .RTC_A(rtc_a), .RTC_DI(rtc_di), .RTC_WR_N(rtc_wr_n), .RTC_DO(rtc_do));
-sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
+sp_storage #(.PHYS_FDD(0)) storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(m_cpu_res_n), .IORQ_N(m_iorq_n),
 	.MD(m_md), .HDD_C(m_hdd_c), .FDD_C(m_fdd_c), .HD_A(m_hd_a), .WG_A(m_wg_a), .XHD_RES(m_xhd_res), .XHD_RD(m_xhd_rd),
 	.XHD_WR(m_xhd_wr), .XHD1_CS(m_xhd1_cs), .XHD2_CS(m_xhd2_cs), .WG_RD_N(m_wg_rd_n), .WG_WR_N(m_wg_wr_n),
 	.WR_PDOS(m_wr_pdos), .RD_KMPS(m_rd_kmps), .FDD_1440(m_fdd_1440), .CMOS_DRD(m_cmos_drd), .CMOS_Q(cmos_q),
@@ -451,7 +456,8 @@ sp_storage storage(.CLK(clk_sys), .CLK_BUS(clk_bus), .RESET(areset), .CPU_RES_N(
 	.SDC_IMG_MOUNTED(sdc_img_mounted), .SDC_IMG_SIZE(sdc_img_size), .SDC_RD(sdc_rd), .SDC_WR(sdc_wr),
 	.SDC_SECTOR(sdc_sector), .SDC_BUSY(sdc_busy), .SDC_DONE(sdc_done), .SDC_ERROR(sdc_error), .SDC_SLOT(sdc_slot),
 	.SDC_BYTE_IN_STROBE(sdc_byte_in_strobe), .SDC_BYTE_ADDR(sdc_byte_addr), .SDC_BYTE_IN_DATA(sdc_byte_in_data),
-	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(img_wp), .HDD_LED(), .FDD_ACTIVE());
+	.SDC_BYTE_OUT_DATA(sdc_byte_out_data), .IMG_WP(img_wp), .HDD_LED(), .FDD_ACTIVE(),
+	.IMG_PHYS_WR(img_phys_wr), .IMG_PHYS(img_phys), .FDD_IN(fdd_in), .FDD_OUT(fdd_out));
 
 // SRAM and SDRAM data pins: the output enables per bit (ODDR2 / IOB flip-flops inside the controllers)
 genvar gi;
@@ -465,11 +471,89 @@ endgenerate
 // ---------- sound: the I2S of the ACEX -> samples ----------
 wire [15:0] snd_l, snd_r;
 sp_i2s_rx i2s_rx(.CLK(clk_sys), .BCK(dac_bck), .WS(dac_ws), .DATA(dac_data), .LEFT(snd_l), .RIGHT(snd_r));
+
+// the tape monitor (modules kg_tape_monitor, as core-tsconf): TAPE_IN (the pin) and TAPE_OUT (the XA2 latch of
+// sp_machine, a clk_sys register: clk_bus = clk_sys / 3 with aligned edges) heard in the mix; a level held 37 ms
+// relaxes to 0 (an open input, MIC left at 1)
+wire signed [15:0] tape_mon_sample;
+kg_tape_monitor #(.CLK_HZ(28000000), .HOLD_US(37000), .LEVEL_IN(4096), .LEVEL_OUT(2048)) tape_monitor(
+	.clk(clk_bus), .mode(tape_mon), .tape_in(TAPE_IN), .tape_out(TAPE_OUT), .in_on(), .out_on(),
+	.sample(tape_mon_sample));
+
+// ---------- ADC (PCM1808: the line in and the MIDI synth SAM2695 of the board; as core-p4096 / core-tsconf) ----------
+// i2s_transceiver (Digi-Key, unchanged) is the master: SCKI = ADC_CLK = clk_bus 28.03 MHz, BCK = clk_bus / 4,
+// LRCK = BCK / 64 (109.5 kHz, SCKI = 256 fs), 24 bits; half of the scale into the mix (as core-p4096)
+wire [23:0] adc_l, adc_r;
+i2s_transceiver adc(
+	.reset_n			(~areset),
+	.mclk				(clk_bus),
+	.sclk				(ADC_BCK),
+	.ws				(ADC_LRCK),
+	.sd_tx			(),
+	.sd_rx			(ADC_DOUT),
+	.l_data_tx		(24'b0),
+	.r_data_tx		(24'b0),
+	.l_data_rx		(adc_l),
+	.r_data_rx		(adc_r)
+);
+ODDR2 oddr_adc(.Q(ADC_CLK), .C0(clk_bus), .C1(~clk_bus), .CE(1'b1), .D0(1'b1), .D1(1'b0), .R(1'b0), .S(1'b0));
+reg [15:0] adc_mix_l = 16'd0, adc_mix_r = 16'd0;
+always @(posedge clk_bus) begin
+	adc_mix_l <= {adc_l[23], adc_l[23:9]};
+	adc_mix_r <= {adc_r[23], adc_r[23:9]};
+end
+// ---------- ADC end
+
+// the final mix (clk_bus): the sound of the ACEX + the tape monitor + the ADC, saturated to 16 bits
+function [15:0] sat16(input [17:0] v);   // a sum of up to four 16-bit two's complement values
+	sat16 = (v[17:15] == 3'b000 || v[17:15] == 3'b111) ? v[15:0] : v[17] ? 16'h8000 : 16'h7FFF;
+endfunction
+function [17:0] sx18(input [15:0] v);
+	sx18 = {{2{v[15]}}, v};
+endfunction
+// the samples of the ACEX (clk_sys registers) into clk_bus first: the adder then sits between clk_bus registers
+reg [15:0] snd_lb = 16'd0, snd_rb = 16'd0;
+always @(posedge clk_bus) begin
+	snd_lb <= snd_l;
+	snd_rb <= snd_r;
+end
+
+// the output capacitor of the original (karabas): the ACEX puts {0, AY} + {1, CBL[15:5]} on the DAC (sp_acex.v
+// ay_sum): the AY (with the beeper) is unipolar and the CBL / Covox idles at its middle, so silence is -16384 and
+// every AY volume a program leaves set is a DC step (FN idle on the board 2026-11-22: -16400, -11408, -6546). The
+// Sprinter takes it off with the coupling capacitor after the TDA1543; here: (1) +16384 (silence = 0, no start-up
+// transient), (2) a one-pole high pass, the mean updated at 28 MHz / 512 = 54.7 kHz with k = 2^-12 (75 ms, -3 dB at
+// ~2 Hz), y = x - mean, saturated to 16 bits. The mix and the peaks of the mcu take the filtered sound.
+reg [8:0] hp_div = 9'd0;
+reg signed [32:0] hp_ml = 33'sd0, hp_mr = 33'sd0;           // the mean, 17.16
+reg [15:0] snd_hl = 16'd0, snd_hr = 16'd0;
+wire signed [16:0] hp_xl = $signed({snd_lb[15], snd_lb}) + 17'sd16384;
+wire signed [16:0] hp_xr = $signed({snd_rb[15], snd_rb}) + 17'sd16384;
+wire signed [33:0] hp_dl = $signed({hp_xl, 16'd0}) - $signed({hp_ml[32], hp_ml});   // x - mean, 17.16
+wire signed [33:0] hp_dr = $signed({hp_xr, 16'd0}) - $signed({hp_mr[32], hp_mr});
+wire signed [17:0] hp_yl = hp_dl[33:16];
+wire signed [17:0] hp_yr = hp_dr[33:16];
+always @(posedge clk_bus) begin
+	hp_div <= hp_div + 9'd1;
+	if (hp_div == 9'd0) begin
+		hp_ml <= hp_ml + {{11{hp_dl[33]}}, hp_dl[33:12]};
+		hp_mr <= hp_mr + {{11{hp_dr[33]}}, hp_dr[33:12]};
+	end
+	snd_hl <= (hp_yl[17:15] == 3'b000 || hp_yl[17:15] == 3'b111) ? hp_yl[15:0] : hp_yl[17] ? 16'h8000 : 16'h7FFF;
+	snd_hr <= (hp_yr[17:15] == 3'b000 || hp_yr[17:15] == 3'b111) ? hp_yr[15:0] : hp_yr[17] ? 16'h8000 : 16'h7FFF;
+end
+
+wire [17:0] mix_l = sx18(snd_hl) + sx18(tape_mon_sample) + sx18(adc_mix_l);
+wire [17:0] mix_r = sx18(snd_hr) + sx18(tape_mon_sample) + sx18(adc_mix_r);
 reg [15:0] audio_l = 16'd0, audio_r = 16'd0;
 always @(posedge clk_bus) begin
-	audio_l <= snd_l;
-	audio_r <= snd_r;
+	audio_l <= sat16(mix_l);
+	audio_r <= sat16(mix_r);
 end
+
+// the level meters of the mcu: the peaks of the final mix as CMD_AUDIO_PEAKS_L / _R (modules audio_peaks.v, as
+// core-nanomig), on clk_bus = the clock of kg_mcu2 (MATRIX_CMD of ENABLE_AUX)
+audio_peaks audio_peaks(.clk(clk_bus), .audio_l(audio_l), .audio_r(audio_r), .cmd_wr(matrix_cmd_wr), .cmd(matrix_cmd));
 
 // sigma-delta DACs (AUDIO_L / AUDIO_R): the samples (two's complement) as offset binary, 12 bits
 kg_sigma_delta_dac #(.MSBI(15)) dac_l(.clk(clk_bus), .reset(areset),

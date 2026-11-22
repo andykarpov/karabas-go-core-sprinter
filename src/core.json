@@ -7,6 +7,10 @@
     "eeprom_bank": 4,
     "eeprom_init": "roms/cmos_306_mame.bin",
     "rtc_mode": 0,
+    "drives": [
+        "A",
+        "B"
+    ],
     "roms": [
         {
             "filename": "roms/sp2k-3.06-hf2.rom",
@@ -16,17 +20,17 @@
     "boards": {
         "go": {
             "link": 2,
-            "build": "26112202",
+            "build": "26112204",
             "bitstream": "karabas_go.bin"
         },
         "mini": {
             "link": 2,
-            "build": "26112202",
+            "build": "26112204",
             "bitstream": "karabas_mini.bin"
         },
         "minig": {
             "link": 2,
-            "build": "26112202",
+            "build": "26112204",
             "bitstream": "karabas_minig.bin"
         }
     },
@@ -45,14 +49,44 @@
             "name": "Disk A",
             "slot": 0,
             "extensions": ".img .ima .trd",
-            "hotkey": "Menu+F5"
+            "hotkey": "Menu+F5",
+            "physical": 1,
+            "boards": [
+                "go"
+            ]
+        },
+        {
+            "type": "F",
+            "name": "Disk A",
+            "slot": 0,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F5",
+            "boards": [
+                "mini",
+                "minig"
+            ]
         },
         {
             "type": "F",
             "name": "Disk B",
             "slot": 1,
             "extensions": ".img .ima .trd",
-            "hotkey": "Menu+F6"
+            "hotkey": "Menu+F6",
+            "physical": 1,
+            "boards": [
+                "go"
+            ]
+        },
+        {
+            "type": "F",
+            "name": "Disk B",
+            "slot": 1,
+            "extensions": ".img .ima .trd",
+            "hotkey": "Menu+F6",
+            "boards": [
+                "mini",
+                "minig"
+            ]
         },
         {
             "type": "F",
@@ -65,6 +99,31 @@
             "name": "HDD Slave",
             "slot": 5,
             "extensions": ".vhd .img .hdf"
+        },
+        {
+            "type": "S",
+            "name": "Tape monitor",
+            "index": 3,
+            "options": [
+                {
+                    "name": "Off",
+                    "key": "off"
+                },
+                {
+                    "name": "In",
+                    "key": "in"
+                },
+                {
+                    "name": "Out",
+                    "key": "out"
+                },
+                {
+                    "name": "Both",
+                    "key": "both"
+                }
+            ],
+            "default": 0,
+            "hotkey": "Menu+T"
         },
         {
             "type": "S",

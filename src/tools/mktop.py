@@ -6,10 +6,10 @@ the sound and the disks are those of Mini G; the ports of a board come from its 
 
 Mini: no PCM5102 (sigma-delta AUDIO_L / AUDIO_R), no ESP32 PCM (ESP_RESET_N / ESP_BOOT_N), MCU_SCK and FT_CLK
   not on clock pins, MCU_IO[3:0], FT_RESET, MIDI_CLK 12 MHz and MIDI_RESET_N, HDMI audio at 44.1 kHz.
-Go: no HDMI, no FT_CLK_OUT, no ADC: the FPGA and the FT812 share the video DAC (VGA_*, V_CLK = inverted pixel clock
+Go: no HDMI, no FT_CLK_OUT, no ADC (no PCM1808 on the Go: zeros in the mix): the FPGA and the FT812 share the video DAC (VGA_*, V_CLK = inverted pixel clock
   of bus_ce or FT_CLK, FT_OE_N), the syncs by the OSD item VGA Sync (index 2, Go only); MCU_SCK not on a clock
-  pin, INT of link v2 on MCU_SPI_IO[0], the FT812 select on MCU_SPI_FT_CS_N; the floppy connector outputs 0 (no
-  physical drive yet), the beeper off, MIDI_CLK 12 MHz, DAC_LRCK / DAC_MUTE.
+  pin, INT of link v2 on MCU_SPI_IO[0], the FT812 select on MCU_SPI_FT_CS_N; the floppy connector: the physical
+  drives (sp_fdd_phys, PHYS_FDD 1), the beeper off, MIDI_CLK 12 MHz, DAC_LRCK / DAC_MUTE.
 
 Every replacement must match once, else this stops.  Run in src/:  python3 tools/mktop.py [BOARD=FILE ...]
 """
@@ -77,11 +77,17 @@ def go(b):
     b = cut(b, "// T3 (FLASH_CS_N) = 0", "assign FLASH_CS_N   = 1'b0;\n",
             "// the configuration flash is not used: its select high\nassign FLASH_CS_N   = 1'b1;\n", "flash")
     b = sub(b, "assign ESP32_SPI_CS_N = 1'b1;\n",
-            "assign ESP_RESET_N = 1'bz;\nassign ESP_BOOT_N = 1'bz;\nassign BEEPER = 1'b0;\n"
-            "// the floppy connector: no physical drive yet (all outputs 0 = inactive behind the inverters)\n"
-            "assign FDC_DRIVE = 2'b00;\nassign FDC_MOTOR = 1'b0;\nassign FDC_DIR = 1'b0;\nassign FDC_STEP = 1'b0;\n"
-            "assign FDC_WDATA = 1'b0;\nassign FDC_WGATE = 1'b0;\nassign FDC_SIDE_N = 1'b0;\n", "esp")
-    b = cut(b, "// ADC: not used\n", "assign ADC_LRCK = 1'bz;\n", "", "adc")
+            "assign ESP_RESET_N = 1'bz;\nassign ESP_BOOT_N = 1'bz;\nassign BEEPER = 1'b0;\n", "esp")
+    b = sub(b, "// the floppy connector (the Go only): no drive here\nwire [3:0] fdd_in = 4'b0000;\nwire [7:0] fdd_out;\n",
+            "// the floppy connector (high = active at the pins, the board has inverters; FDC_SIDE_N is side 1 when high):\n"
+            "// sp_fdd_phys inside sp_storage, registered there, all 0 while no physical drive is selected\n"
+            "wire [3:0] fdd_in = { FDC_RDATA, FDC_WPRT, FDC_TR00, FDC_INDEX };\nwire [7:0] fdd_out;\n"
+            "assign FDC_DRIVE = fdd_out[1:0];\nassign FDC_MOTOR = fdd_out[2];\nassign FDC_DIR = fdd_out[3];\n"
+            "assign FDC_STEP = fdd_out[4];\nassign FDC_SIDE_N = fdd_out[5];\nassign FDC_WGATE = fdd_out[6];\n"
+            "assign FDC_WDATA = fdd_out[7];\n", "fdd")
+    b = sub(b, "sp_storage #(.PHYS_FDD(0)) storage(", "sp_storage #(.PHYS_FDD(1)) storage(", "phys fdd")
+    b = cut(b, "// ---------- ADC (PCM1808", "// ---------- ADC end\n",
+            "// no ADC on the Go\nwire [15:0] adc_mix_l = 16'd0, adc_mix_r = 16'd0;\n", "adc")
     b = sub(b, *CLK12, "clk12")
     b = sub(b, *CLK12A, "clk12 assign")
     b = cut(b, "// the FT812 must always get a clock", "ODDR2 u_ft_clk (.Q(FT_CLK_OUT), .C0(clk_8mhz), .C1(~clk_8mhz), .CE(1'b1), .D0(1'b1), .D1(1'b0), .R(1'b0), .S(1'b0));\n",
@@ -93,7 +99,6 @@ def go(b):
     b = cut(b, "// MCU_SCK on a global buffer", "BUFG bufg_mcu_sck(.I(mcu_sck_ibufg), .O(mcu_sck));\n",
             "// MCU_SCK is not on a clock pin of the Go (CLOCK_DEDICATED_ROUTE = FALSE in the ucf)\n"
             "wire mcu_sck = MCU_SCK, mcu_sck_ibufg = MCU_SCK;\n", "mcu sck")
-    b = sub(b, "localparam SW_N = 2;", "localparam SW_N = 3;", "sw_n")
     b = sub(b, "	.MCU_SPI_FT_SS	(MCU_IO[3]),", "	.MCU_SPI_FT_SS	(MCU_SPI_FT_CS_N),", "ft ss")
     b = sub(b, "assign FT_SPI_MOSI = mcu_ft_spi_on ? mcu_ft_mosi : 1'b1;\n",
             "assign FT_SPI_MOSI = mcu_ft_spi_on ? mcu_ft_mosi : 1'b1;\n"
@@ -116,7 +121,7 @@ def go(b):
 
 
 NAMES = {"go": "Karabas Go", "mini": "Karabas Mini (before rev.G)"}
-NOTE = {"go": "// The Go: VGA (the video DAC, V_CLK) instead of HDMI, no FT_CLK_OUT, no ADC, the floppy connector unused.\n",
+NOTE = {"go": "// The Go: VGA (the video DAC, V_CLK) instead of HDMI, no FT_CLK_OUT, no ADC, the physical floppy drives.\n",
         "mini": "// The Mini: sigma-delta AUDIO_L / AUDIO_R instead of the PCM5102, HDMI audio 44.1 kHz, MCU_SCK / FT_CLK not on\n"
                 "// clock pins, MIDI_CLK / MIDI_RESET_N, FT_RESET.\n"}
 EDIT = {"go": go, "mini": mini}

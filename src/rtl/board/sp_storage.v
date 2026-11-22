@@ -7,7 +7,8 @@
 //   the word is on MD[15:0] (the ACEX keeps the high byte in HDDR), the registers on MD[7:0]. No IORDY / /WAIT (the
 //   MAX does not use XHR_RDY either: the timing of the IDE comes from the wait table of the ACEX), and hdf_ata needs
 //   none: a sector is in its buffer before DRQ.
-// - FDD: sp_fdd (wd1793 + the system register #FF), drives A / B = image slots 0 / 1.
+// - FDD: sp_fdd (wd1793 + the system register #FF), drives A / B = image slots 0 / 1; PHYS_FDD = 1 (the Go): either
+//   drive on the floppy connector instead (sp_fdd_phys, the mapping of the mcu: IMG_PHYS).
 // - Read data: an IDE read (XHD_RD), a WD1793 register (WG_RD_N), the system register #FF (RD_KMPS with the KP11
 //   select MA2 = FDD_C0 latched) and the CMOS read (CMOS_DRD, the byte from CMOS_Q: the hook for sp_cmos) are put on
 //   MD from the start of their strobe to the end of the CPU I/O cycle (IORQ_N high): the ACEX takes the byte at the
@@ -21,7 +22,9 @@
 //   hdf_ata ends the access (two CLK_BUS after the strobe rise) and while sp_fdd takes the data.
 // - The IDE reset of hdf_ata: XHD_RES of the MAX (power-up) or the CPU /RESET (a reset in the middle of a transfer
 //   must not leave the device in DRQ for the next boot; as core-p4096 with its machine reset).
-module sp_storage (
+module sp_storage #(
+	parameter PHYS_FDD = 0           // 1: the physical floppy drives of the Karabas Go (sp_fdd PHYS)
+) (
 	input  wire        CLK,
 	input  wire        CLK_BUS,
 	input  wire        RESET,          // power-up (CLK_BUS): the images forgotten
@@ -63,7 +66,12 @@ module sp_storage (
 	output wire  [7:0] SDC_BYTE_OUT_DATA,
 	input  wire  [7:0] IMG_WP,
 	output wire        HDD_LED,
-	output wire        FDD_ACTIVE
+	output wire        FDD_ACTIVE,
+	// ---- the physical floppy drives (PHYS_FDD, CLK_BUS): the mapping of kg_mcu2, the pins (high = active)
+	input  wire        IMG_PHYS_WR,
+	input  wire [15:0] IMG_PHYS,
+	input  wire  [3:0] FDD_IN,         // { rdata, wprt, tr00, index }
+	output wire  [7:0] FDD_OUT         // { wdata, wgate, side1, step, dir, motor, ds1, ds0 }
 );
 	// ================= CLK: the strobes, frozen address / data for the controllers
 	reg  [2:0] ide_a = 3'd0;
@@ -136,12 +144,13 @@ module sp_storage (
 	wire  [1:0] fdd_rd, fdd_wr;
 	wire [31:0] fdd_sector;
 	wire  [7:0] fdd_out_data, fdd_dout, fdd_sys_q;
-	sp_fdd fdd(.clk(CLK_BUS), .reset(res_bus), .wg_rd_n(wg_rd_n), .wg_wr_n(wg_wr_n), .wr_pdos_n(wg_pdos_n),
+	sp_fdd #(.PHYS(PHYS_FDD)) fdd(.clk(CLK_BUS), .reset(res_bus), .wg_rd_n(wg_rd_n), .wg_wr_n(wg_wr_n), .wr_pdos_n(wg_pdos_n),
 		.a(wg_a), .din(wg_d), .fdd_1440(wg_1440), .dout(fdd_dout), .sys_q(fdd_sys_q), .wp(IMG_WP[1:0]),
 		.img_mounted(SDC_IMG_MOUNTED[1:0]), .img_size(SDC_IMG_SIZE), .sdc_rd(fdd_rd), .sdc_wr(fdd_wr),
 		.sdc_sector(fdd_sector), .sdc_busy(SDC_BUSY & fdd_own), .sdc_done(SDC_DONE & fdd_own),
 		.sdc_byte_addr(SDC_BYTE_ADDR), .sdc_byte_in_strobe(SDC_BYTE_IN_STROBE & fdd_own),
-		.sdc_byte_in_data(SDC_BYTE_IN_DATA), .sdc_byte_out_data(fdd_out_data), .active(FDD_ACTIVE));
+		.sdc_byte_in_data(SDC_BYTE_IN_DATA), .sdc_byte_out_data(fdd_out_data), .active(FDD_ACTIVE),
+		.img_phys_wr(IMG_PHYS_WR), .img_phys(IMG_PHYS), .fdd_in(FDD_IN), .fdd_out(FDD_OUT));
 
 	// one request at a time, the lowest slot first (kg_l2_img): the floppies (0-1) before the hard disks (4-5)
 	assign SDC_RD = {2'b00, hdf_rd, 2'b00, fdd_rd};

@@ -25,8 +25,15 @@
    which rate it sets).
  - A sector goes to / from the mcu directly (5-15 ms a sector, the time of a real drive); a drive change or a mount
    of the selected drive gives wd1793 a mount pulse with that size (a disk inserted). READY = the drive has an image.
+ - PHYS = 1 (the Karabas Go, karabas: Ф4): a drive is a physical one when the mcu maps its slot to the connector
+   (CMD_IMG_PHYS: IMG_PHYS = {slot, 1 DS0 / 2 DS1}; a mount of an image puts the drive back on the image, as
+   core-specialist / orion128). While the selected drive (#FF bit 0) is physical, the strobes, the register reads
+   and #FF INTRQ / DRQ are those of sp_fdd_phys (the VG93 model on the pins), wd1793 sees nothing (it keeps its
+   track register for the image drive); its pins are all 0 while the selected drive is an image.
 */
-module sp_fdd (
+module sp_fdd #(
+	parameter PHYS = 0                   // 1: the physical drives of the Go (sp_fdd_phys)
+) (
 	input  wire        clk,          // clk_bus (28 MHz)
 	input  wire        reset,        // the CPU reset (the system register to 0)
 
@@ -53,7 +60,13 @@ module sp_fdd (
 	input  wire        sdc_byte_in_strobe,
 	input  wire [7:0]  sdc_byte_in_data,
 	output wire [7:0]  sdc_byte_out_data,
-	output wire        active        // a sector in flight (an icon / LED)
+	output wire        active,       // a sector in flight (an icon / LED)
+
+	// the physical drives (PHYS = 1): the mapping of the mcu (kg_mcu2 IMG_PHYS_WR / IMG_PHYS), the floppy pins
+	input  wire        img_phys_wr,
+	input  wire [15:0] img_phys,
+	input  wire  [3:0] fdd_in,       // { rdata, wprt, tr00, index }, high = active
+	output wire  [7:0] fdd_out       // { wdata, wgate, side1, step, dir, motor, ds1, ds0 }, high = active
 );
 
 // ---------------- clock enable (7 MHz), the strobes ----------------
@@ -61,6 +74,7 @@ reg [1:0] div = 2'd0;
 always @(posedge clk) div <= div + 2'd1;
 wire ce = div == 2'd0;
 
+wire phys_sel;                                      // the selected drive is a physical one
 reg rd_q = 1'b0, wr_q = 1'b0, pd_q = 1'b0;          // the strobes sampled here (1 = active)
 reg rd_p = 1'b0, wr_p = 1'b0;                       // the pulses to wd1793
 reg [1:0] a_s = 2'd0;
@@ -73,13 +87,38 @@ always @(posedge clk) begin
 	pd_q <= !wr_pdos_n;
 	if ((!wg_rd_n && !rd_q) || (!wg_wr_n && !wr_q)) a_s <= a;   // the start of a strobe
 	if (!wg_wr_n || !wr_pdos_n) d_s <= din;                    // the data until the end of the strobe
-	if (rd_q && wg_rd_n) rd_p <= 1'b1; else if (ce) rd_p <= 1'b0;
-	if (wr_q && wg_wr_n) wr_p <= 1'b1; else if (ce) wr_p <= 1'b0;
+	if (rd_q && wg_rd_n && !phys_sel) rd_p <= 1'b1; else if (ce) rd_p <= 1'b0;
+	if (wr_q && wg_wr_n && !phys_sel) wr_p <= 1'b1; else if (ce) wr_p <= 1'b0;
 	if (reset) sys <= 8'h00;
 	else if (pd_q && wr_pdos_n) sys <= d_s;
 	if (wr_q && wg_wr_n && a_s == 2'd0) cmd <= d_s;
 end
 wire drv = sys[0];
+
+// ---------------- the physical drives: map 0 = the image, 1 = DS0, 2 = DS1 ----------------
+reg [1:0] map0 = 2'd0, map1 = 2'd0;
+always @(posedge clk) begin
+	if (img_mounted[0]) map0 <= 2'd0;
+	if (img_mounted[1]) map1 <= 2'd0;
+	if (PHYS && img_phys_wr && img_phys[15:8] == 8'd0) map0 <= img_phys[1:0];
+	if (PHYS && img_phys_wr && img_phys[15:8] == 8'd1) map1 <= img_phys[1:0];
+end
+wire [1:0] phys_ds = PHYS ? (drv ? map1 : map0) : 2'd0;
+assign phys_sel = phys_ds != 2'd0;
+wire [7:0] phys_dout;
+wire phys_drq, phys_intrq;
+generate
+	if (PHYS) begin : g_phys
+		sp_fdd_phys phys(.clk(clk), .reset(reset), .hd(fdd_1440), .mr_n(sys[2]), .hlt(sys[3]), .side1(!sys[4]),
+			.ds(phys_ds), .rd(rd_q && phys_sel), .wr(wr_q && phys_sel), .a(a_s), .din(d_s), .dout(phys_dout),
+			.drq(phys_drq), .intrq(phys_intrq), .fdd_in(fdd_in), .fdd_out(fdd_out));
+	end else begin : g_nophys
+		assign phys_dout = 8'hFF;
+		assign phys_drq = 1'b0;
+		assign phys_intrq = 1'b0;
+		assign fdd_out = 8'd0;
+	end
+endgenerate
 
 // ---------------- the images of the drives ----------------
 reg [20:0] size0 = 21'd0, size1 = 21'd0;
@@ -110,13 +149,14 @@ reg [7:0] sd_buff_dout = 8'd0;
 reg sd_buff_wr = 1'b0;
 wire [7:0] sd_buff_din;
 wire drq, intrq;
+wire [7:0] img_dout;
 localparam ST_IDLE = 3'd0, ST_RD = 3'd1, ST_RD_WAIT = 3'd2, ST_WR = 3'd3, ST_WR_WAIT = 3'd4, ST_END = 3'd5;
 reg [2:0] st = ST_IDLE;
 wire [8:0] sd_buff_addr = (st == ST_WR || st == ST_WR_WAIT) ? sdc_byte_addr : sd_buff_addr_r;
 
 wd1793 #(.RWMODE(1), .EDSK(0)) vg (
 	.clk_sys(clk), .ce(ce), .reset(reset || !sys[2]), .io_en(1'b1),
-	.rd(rd_p), .wr(wr_p), .addr(a_s), .din(d_s), .dout(dout),
+	.rd(rd_p), .wr(wr_p), .addr(a_s), .din(d_s), .dout(img_dout),
 	.drq(drq), .intrq(intrq), .busy(),
 	.wp(wp[drv]), .size_code(size_code), .layout(1'b0), .side(!sys[4]), .ready(here[drv]),
 	.img_mounted(mnt_cnt != 4'd0), .img_size(size_sel), .prepare(),
@@ -126,7 +166,8 @@ wd1793 #(.RWMODE(1), .EDSK(0)) vg (
 	.buff_addr(), .buff_read(), .buff_din(8'd0)
 );
 
-assign sys_q = {intrq && rate_ok, drq && rate_ok, 6'b111111};
+assign sys_q = phys_sel ? {phys_intrq, phys_drq, 6'b111111} : {intrq && rate_ok, drq && rate_ok, 6'b111111};
+assign dout = phys_sel ? phys_dout : img_dout;
 
 // ---------------- sd_* of wd1793 <-> sdc_* of the mcu (as p4096_fdd) ----------------
 reg cur = 1'b0;

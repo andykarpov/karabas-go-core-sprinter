@@ -12,19 +12,21 @@ The PetersPlus Sprinter Sp2000 (Z84C15 at 21 MHz, Altera ACEX + MAX, 4 MB RAM, 2
 
 The core file is in `src/`. The BIOS is in it: **Sprinter BIOS 3.06 Hotfix 2**, the only supported BIOS version.
 
-Status: build 26112202. Checked on a Mini G board: BIOS 3.06 HF2 and SETUP, the CMOS clock, DSS 1.70 and Flex Navigator 1.15 from a hard disk image, DSS from a floppy image, the keyboard and the mouse, Thunder in the Deep (its own ACEX configuration, with scrolling and sound), the games uwol and TMNTF (Z84C15 CTC interrupts). The Go and Mini builds have not been run on a board.
+Status: build 26112204. Checked on a Mini G board: BIOS 3.06 HF2 and SETUP, the CMOS clock, DSS 1.70 and Flex Navigator 1.15 from a hard disk image, DSS from a floppy image, the keyboard and the mouse, Thunder in the Deep (its own ACEX configuration, with scrolling and sound), the games uwol and TMNTF (Z84C15 CTC interrupts), the audio level meters of the board, the sound without the DC level of the original's DAC. Not tried on a board: tape, MIDI, the line input, the physical floppy drives of the Go. The Go and Mini builds have not been run on a board.
 
 ## Features
 
 - **ACEX configurations** ("personalities", chosen by the hash of the configuration stream the software loads, as in MAME): 3.03a (the base), **k30** (BIOS 3.05 / 3.06) and **SCROLL** (Thunder in the Deep, `GAME_00`, `LDCONF gc.bin`). An unknown stream runs as 3.03a.
 - **Machine:** Z84C15 (T80 with CTC, SIO, PIO), the ACEX with its accelerator, 4 MB of RAM (SDRAM), the video RAM, ROM and fastram in the SRAM, the MAX (syncs, reset, configuration loading).
 - **Video:** the video modes of the ACEX and the palette, line-doubled to 720 x 576 at 50 Hz.
-- **Sound:** AY and CBL / Covox of the ACEX.
-- **Disks:** IDE primary channel, master and slave, on hard disk images (`.img`, `.hdf`, `.vhd`) on the SD card; WD1793 with drives A and B on floppy images (`.img` / `.ima` 720 KB and 1.44 MB, `.trd`).
+- **Sound:** AY and CBL / Covox of the ACEX, with the output capacitor of the original (a 2 Hz high pass: no DC level); the tape monitor (OSD, Menu+T); the line input (ADC, Mini / Mini G); the audio level meters of the board.
+- **Tape:** tape in / out on port `FE`.
+- **MIDI:** AY register 14 bit 2 (as the ZX Spectrum 128) on the MIDI out of the board.
+- **Disks:** IDE primary channel, master and slave, on hard disk images (`.img`, `.hdf`, `.vhd`) on the SD card; WD1793 with drives A and B on floppy images (`.img` / `.ima` 720 KB and 1.44 MB, `.trd`); on the Go either drive can be a physical one (OSD).
 - **Clock:** the CMOS / RTC of the BIOS on the RTC of the board, kept in `/config/sprinter.eep`.
 - **Controllers:** the USB keyboard (AT scan codes), the USB mouse (serial mouse on the SIO).
 
-Not done: the secondary IDE channel, tape, ISA, the physical floppy drive of the Go, BIOS versions other than 3.06.
+Not done: ISA, BIOS versions other than 3.06. Not planned: CD-ROM, the secondary IDE channel.
 
 ## Getting started
 
