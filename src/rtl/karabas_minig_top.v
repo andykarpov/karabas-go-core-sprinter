@@ -506,8 +506,14 @@ endfunction
 function [17:0] sx18(input [15:0] v);
 	sx18 = {{2{v[15]}}, v};
 endfunction
-wire [17:0] mix_l = sx18(snd_l) + sx18(tape_mon_sample) + sx18(adc_mix_l);
-wire [17:0] mix_r = sx18(snd_r) + sx18(tape_mon_sample) + sx18(adc_mix_r);
+// the samples of the ACEX (clk_sys registers) into clk_bus first: the adder then sits between clk_bus registers
+reg [15:0] snd_lb = 16'd0, snd_rb = 16'd0;
+always @(posedge clk_bus) begin
+	snd_lb <= snd_l;
+	snd_rb <= snd_r;
+end
+wire [17:0] mix_l = sx18(snd_lb) + sx18(tape_mon_sample) + sx18(adc_mix_l);
+wire [17:0] mix_r = sx18(snd_rb) + sx18(tape_mon_sample) + sx18(adc_mix_r);
 reg [15:0] audio_l = 16'd0, audio_r = 16'd0;
 always @(posedge clk_bus) begin
 	audio_l <= sat16(mix_l);
