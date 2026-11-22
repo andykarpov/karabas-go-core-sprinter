@@ -517,8 +517,34 @@ always @(posedge clk_bus) begin
 	snd_lb <= snd_l;
 	snd_rb <= snd_r;
 end
-wire [17:0] mix_l = sx18(snd_lb) + sx18(tape_mon_sample) + sx18(adc_mix_l);
-wire [17:0] mix_r = sx18(snd_rb) + sx18(tape_mon_sample) + sx18(adc_mix_r);
+
+// the output capacitor of the original (karabas): the ACEX puts {0, AY} + {1, CBL[15:5]} on the DAC (sp_acex.v
+// ay_sum): the AY (with the beeper) is unipolar and the CBL / Covox idles at its middle, so silence is -16384 and
+// every AY volume a program leaves set is a DC step (FN idle on the board 2026-11-22: -16400, -11408, -6546). The
+// Sprinter takes it off with the coupling capacitor after the TDA1543; here: (1) +16384 (silence = 0, no start-up
+// transient), (2) a one-pole high pass, the mean updated at 28 MHz / 512 = 54.7 kHz with k = 2^-12 (75 ms, -3 dB at
+// ~2 Hz), y = x - mean, saturated to 16 bits. The mix and the peaks of the mcu take the filtered sound.
+reg [8:0] hp_div = 9'd0;
+reg signed [32:0] hp_ml = 33'sd0, hp_mr = 33'sd0;           // the mean, 17.16
+reg [15:0] snd_hl = 16'd0, snd_hr = 16'd0;
+wire signed [16:0] hp_xl = $signed({snd_lb[15], snd_lb}) + 17'sd16384;
+wire signed [16:0] hp_xr = $signed({snd_rb[15], snd_rb}) + 17'sd16384;
+wire signed [33:0] hp_dl = $signed({hp_xl, 16'd0}) - $signed({hp_ml[32], hp_ml});   // x - mean, 17.16
+wire signed [33:0] hp_dr = $signed({hp_xr, 16'd0}) - $signed({hp_mr[32], hp_mr});
+wire signed [17:0] hp_yl = hp_dl[33:16];
+wire signed [17:0] hp_yr = hp_dr[33:16];
+always @(posedge clk_bus) begin
+	hp_div <= hp_div + 9'd1;
+	if (hp_div == 9'd0) begin
+		hp_ml <= hp_ml + {{11{hp_dl[33]}}, hp_dl[33:12]};
+		hp_mr <= hp_mr + {{11{hp_dr[33]}}, hp_dr[33:12]};
+	end
+	snd_hl <= (hp_yl[17:15] == 3'b000 || hp_yl[17:15] == 3'b111) ? hp_yl[15:0] : hp_yl[17] ? 16'h8000 : 16'h7FFF;
+	snd_hr <= (hp_yr[17:15] == 3'b000 || hp_yr[17:15] == 3'b111) ? hp_yr[15:0] : hp_yr[17] ? 16'h8000 : 16'h7FFF;
+end
+
+wire [17:0] mix_l = sx18(snd_hl) + sx18(tape_mon_sample) + sx18(adc_mix_l);
+wire [17:0] mix_r = sx18(snd_hr) + sx18(tape_mon_sample) + sx18(adc_mix_r);
 reg [15:0] audio_l = 16'd0, audio_r = 16'd0;
 always @(posedge clk_bus) begin
 	audio_l <= sat16(mix_l);
@@ -526,27 +552,8 @@ always @(posedge clk_bus) begin
 end
 
 // the level meters of the mcu: the peaks of the final mix as CMD_AUDIO_PEAKS_L / _R (modules audio_peaks.v, as
-// core-nanomig), on clk_bus = the clock of kg_mcu2 (MATRIX_CMD of ENABLE_AUX). The mix carries a DC level (the
-// AY / DAC levels a program leaves set: -6500 ... -14000 measured in FN idle on the board, 2026-11-22), which
-// kept the meters lit: the peaks are taken of the mix minus its slow mean (a one-pole high pass, 27.4 kHz updates,
-// k = 2^-10: ~37 ms). Only the meters; the sound itself is not filtered.
-reg [8:0] dc_div = 9'd0;
-reg signed [31:0] dc_l = 32'sd0, dc_r = 32'sd0;     // the mean, 16.16
-reg [15:0] pk_l = 16'd0, pk_r = 16'd0;
-wire signed [32:0] dd_l = $signed({audio_l[15], audio_l, 16'd0}) - $signed({dc_l[31], dc_l});   // >>> 10 below
-wire signed [32:0] dd_r = $signed({audio_r[15], audio_r, 16'd0}) - $signed({dc_r[31], dc_r});
-wire signed [16:0] ac_l = $signed({audio_l[15], audio_l}) - $signed({dc_l[31], dc_l[31:16]});
-wire signed [16:0] ac_r = $signed({audio_r[15], audio_r}) - $signed({dc_r[31], dc_r[31:16]});
-always @(posedge clk_bus) begin
-	dc_div <= dc_div + 9'd1;
-	if (dc_div == 9'd0) begin
-		dc_l <= dc_l + {{9{dd_l[32]}}, dd_l[32:10]};
-		dc_r <= dc_r + {{9{dd_r[32]}}, dd_r[32:10]};
-	end
-	pk_l <= (ac_l[16:15] == 2'b01) ? 16'h7FFF : (ac_l[16:15] == 2'b10) ? 16'h8000 : ac_l[15:0];
-	pk_r <= (ac_r[16:15] == 2'b01) ? 16'h7FFF : (ac_r[16:15] == 2'b10) ? 16'h8000 : ac_r[15:0];
-end
-audio_peaks audio_peaks(.clk(clk_bus), .audio_l(pk_l), .audio_r(pk_r), .cmd_wr(matrix_cmd_wr), .cmd(matrix_cmd));
+// core-nanomig), on clk_bus = the clock of kg_mcu2 (MATRIX_CMD of ENABLE_AUX)
+audio_peaks audio_peaks(.clk(clk_bus), .audio_l(audio_l), .audio_r(audio_r), .cmd_wr(matrix_cmd_wr), .cmd(matrix_cmd));
 
 // sigma-delta DACs (AUDIO_L / AUDIO_R): the samples (two's complement) as offset binary, 12 bits
 kg_sigma_delta_dac #(.MSBI(15)) dac_l(.clk(clk_bus), .reset(areset),
