@@ -9,8 +9,9 @@
  - the bus is the one of sp_fdd: the strobes of the MAX sampled in clk_bus (rd / wr active high, a = the register
    taken at the start of the strobe, din = the CPU byte during a write), not the CPU pins;
  - the density by FDD_1440 (10K_D0 of the MAX): CLK of the model 1 MHz (720 KB, TRD: MFM 250 kbit/s) or 2 MHz
-   (1.44 MB: 500 kbit/s), the RCLK half period of the separator 56 or 28 clocks (2 / 1 us); the step rates are
-   those of the chip at that CLK (the TURBING of the MAX, 2 MHz from a step on, is not made);
+   (1.44 MB: 500 kbit/s), the RCLK half period of the separator 56 or 28 clocks (2 / 1 us); at 1 MHz the step
+   rates and head delays of 2 MHz (TURBO_STEP of the model, karabas: for the TURBING of the MAX, which runs the
+   chip at 2 MHz from a step of the head until the next read / write gate): 3 ms a step at r = 0 at both rates;
  - the writes are queued (no WAIT of the CPU here: sp_machine has no input for one): the model takes a written
    byte within two microwords and has one input latch for the four registers, a CPU at 21 MHz writes the sector
    and the command register 2 us apart (FDRIVER2). A write of the CPU goes into a FIFO of 4; the FIFO gives the
@@ -103,7 +104,7 @@ module sp_fdd_phys #(
 		.DAL_I(cur[7:0]), .DAL_O(dal_o), .DAL_OE(dal_oe), .DRQ(m_drq), .INTRQ(m_intrq),
 		.STEP(step), .DIRC(dirc), .EARLY(early), .LATE(late), .HLD(motor), .TG43(tg43), .WG(wg), .WD(wd),
 		.RCLK(rclk), .RAWREAD_n(rawread_n), .READY(motor), .TR00_n(!in_tr00), .IP_n(!in_index), .WPRT_n(!in_wprt),
-		.HLT(hlt)
+		.HLT(hlt), .TURBO_STEP(!hd)
 	);
 	always @(posedge clk) if (re_m && dal_oe) dout <= dal_o;
 	assign drq = m_drq && !wpend;

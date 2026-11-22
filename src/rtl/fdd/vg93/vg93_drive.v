@@ -35,6 +35,9 @@ module vg93_drive (
     output wire tg43,                     // TG43 pin, from the second half of the word
     output wire hld_pin,
     output wire head_loaded               // HLD & HLT: status bit 5, HLD_HLT_TST
+`ifdef VG93_TURBO_STEP_IN
+   ,input  wire turbo                     // karabas: VG93_TURBO_STEP_IN: VG93_TURBO_STEP at run time, while turbo = 1
+`endif
 );
     localparam [7:0] STEP_PERIOD = 8'd250;    // microwords per step rate tick
 
@@ -57,7 +60,12 @@ module vg93_drive (
 
     // ---- step rate ----
     wire period_end;
-`ifdef VG93_TURBO_STEP
+`ifdef VG93_TURBO_STEP_IN
+    // karabas: the two forms below chosen by the turbo input (karabas-go-core-sprinter: the TURBING of its MAX)
+    wire [7:0] step_load = (turbo && !mfm) ? STEP_PERIOD / 8'd2 - 8'd1 : STEP_PERIOD - 8'd1;
+    assign step_tick = turbo ? (period_end || test_q) :
+                       ((!mfm && period_end) || test_q || (period_end && !step_tick_skip));
+`elsif VG93_TURBO_STEP
     wire [7:0] step_load = mfm ? STEP_PERIOD - 8'd1 : STEP_PERIOD / 8'd2 - 8'd1;
     assign step_tick = period_end || test_q;     // twice the chip's rate at CLK 1 MHz (step_tick_skip unused)
 `else

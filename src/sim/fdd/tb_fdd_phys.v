@@ -65,13 +65,14 @@ task check;
 	end
 endtask
 
-// ---- the strobes of the MAX (an I/O cycle of the CPU at 21 MHz: a strobe of ~190 ns, ~2 us between the writes) ----
+// ---- the strobes of the MAX as tb_storage measured them (docs/storage.md 2): WG_RD_N / WG_WR_N 417 ns, the ACEX
+// takes a read byte ~310 ns after the strobe falls (here: the byte at 300 ns) ----
 task wr;
 	input [1:0] r;
 	input [7:0] v;
 	begin
 		a = r; din = v; wg_wr_n = 1'b0;
-		#190 wg_wr_n = 1'b1;
+		#417 wg_wr_n = 1'b1;
 		#100;
 	end
 endtask
@@ -79,7 +80,7 @@ task wr_sys;
 	input [7:0] v;
 	begin
 		din = v; wr_pdos_n = 1'b0;
-		#190 wr_pdos_n = 1'b1;
+		#417 wr_pdos_n = 1'b1;
 		#100;
 	end
 endtask
@@ -88,13 +89,13 @@ task rd;
 	input [1:0] r;
 	begin
 		a = r; wg_rd_n = 1'b0;
-		#190 q = dout;
-		wg_rd_n = 1'b1;
+		#300 q = dout;
+		#117 wg_rd_n = 1'b1;
 		#100;
 	end
 endtask
-task gap;                         // the code of FDRIVER2 between two writes at 21 MHz (~40 T)
-	#1600;
+task gap;                         // less than the code of FDRIVER2 between two writes at 21 MHz (~40 T, ~2 us)
+	#300;
 endtask
 
 // wait for INTRQ (#FF bit 7), then the status
@@ -187,6 +188,21 @@ initial begin
 	check(drv_a.cyl == 2, "A: Seek, the head not on cylinder 2");
 	rd(2'd1);
 	check(q == 8'd2, "A: Seek, track register");
+
+	// the density probe of the BIOS (FDRIVER2 DISK_ID): Read Address at the wrong rate (2 MHz on a 250 kbit/s disk)
+	// gives neither DRQ nor INTRQ for ~140 ms; then the other rate (TURNSPD) and Read Address again (the chip is
+	// still busy with the first one and ignores it): the ID of cylinder 2 within a revolution
+	hd = 1'b1;
+	cmd(8'hC0);
+	n = 0;
+	while (!sys_q[7] && !sys_q[6] && n < 140) begin #1000000; n = n + 1; end
+	check(n == 140, "A: Read Address at the wrong rate: DRQ / INTRQ");
+	hd = 1'b0;
+	cmd(8'hC0);
+	xfer(1'b0, 300);
+	$display("A: Read Address after the rate change: status %h, %0d bytes: %h %h %h %h", st, cnt, dbuf[0], dbuf[1],
+		dbuf[2], dbuf[3]);
+	check(st == 8'h00 && cnt == 6 && dbuf[0] == 8'd2 && dbuf[1] == 8'd0 && dbuf[3] == 8'd2, "A: Read Address");
 
 	wr_sys(8'h2C);                     // side 1
 	wr(2'd2, 8'd3); gap;               // sector 3, Read Sector

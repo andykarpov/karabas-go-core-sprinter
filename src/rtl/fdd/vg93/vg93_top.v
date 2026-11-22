@@ -127,6 +127,9 @@ module vg93_top (
     inout  wire WF_n_VFOE_n,    // input /WF (write fault), output /VFOE (separator enable, open drain); active low
 `endif
     input  wire HLT             // head load timing (head engaged), active high
+`ifdef VG93_TURBO_STEP_IN
+   ,input  wire TURBO_STEP      // karabas: VG93_TURBO_STEP_IN: the step rate of VG93_TURBO_STEP while this input is 1
+`endif
 `ifndef VG93_NO_TEST
    ,input  wire TEST_n          // test (no step rate delay), active low
 `endif
@@ -315,7 +318,11 @@ module vg93_top (
         .tg43_from_cmp(tg43_from_cmp), .set_hld(set_hld), .clr_hld(clr_hld), .cmp_greater(cmp_greater),
         .ready(ready), .tr00(tr00), .ready_seen(ready_seen), .tr00_seen(tr00_seen), .ip_seen(ip_seen),
         .ready_rose(ready_rose), .ready_fell(ready_fell), .ip_edge(ip_edge), .step_tick(step_tick),
-        .step_out(step_out), .dirc(dirc), .tg43(tg43), .hld_pin(hld_pin), .head_loaded(head_loaded));
+        .step_out(step_out), .dirc(dirc), .tg43(tg43), .hld_pin(hld_pin), .head_loaded(head_loaded)
+`ifdef VG93_TURBO_STEP_IN
+        , .turbo(TURBO_STEP)   // karabas
+`endif
+        );
 
     vg93_status status (
         .sysclk(SYSCLK), .word_ends(word_ends), .second_half(second_half), .second_half_held(second_half_held),
